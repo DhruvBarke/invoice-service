@@ -1,0 +1,85 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0
+                             http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+    <parent>
+        <groupId>com.example.invoice</groupId>
+        <artifactId>invoice-service-parent</artifactId>
+        <version>1.0.0-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>invoice-mapper</artifactId>
+    <name>Invoice :: Facade Mappers</name>
+
+    <dependencies>
+        <!-- The ONLY invoice-service dependency permitted here. See the enforcer rule below. -->
+        <dependency>
+            <groupId>${project.groupId}</groupId>
+            <artifactId>invoice-service-domain</artifactId>
+        </dependency>
+        <!--
+          Lombok: compile-time only. Provided scope means it does NOT propagate to consumers, so
+          invoice-mapper's public API is still plain Java classes with hand-written accessors as
+          far as the classpath is concerned. Vendored payload types (InvoicePayable, ReportModel,
+          UBL Invoice) use @Data/@Builder/@NoArgsConstructor/@AllArgsConstructor because
+          hand-rolling ~200 getters/setters/builders across ~100 classes would be pure toil with
+          no upside. The maven-enforcer rule below does NOT ban Lombok (unlike Spring / SQL /
+          the cache module) precisely because it is compile-time only.
+        -->
+        <dependency>
+            <groupId>org.projectlombok</groupId>
+            <artifactId>lombok</artifactId>
+            <version>1.18.30</version>
+            <scope>provided</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-enforcer-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <id>enforce-referential-independence</id>
+                        <goals><goal>enforce</goal></goals>
+                        <configuration>
+                            <rules>
+                                <bannedDependencies>
+                                    <searchTransitive>true</searchTransitive>
+                                    <excludes>
+                                        <!--
+                                          THIS RULE IS THE LOAD-BEARING PART OF THE ARCHITECTURE.
+                                          Sibling modules in one repository drift together within a
+                                          year if nothing objects, and the coupling stays invisible
+                                          until someone needs a DataSource to run a mapper unit test.
+                                          Run `mvn verify` on this module in CI, not just `mvn test`.
+                                        -->
+                                        <exclude>${project.groupId}:invoice-service-cache</exclude>
+                                        <exclude>${project.groupId}:invoice-service-alerting</exclude>
+                                        <exclude>${project.groupId}:third-parties</exclude>
+                                        <exclude>org.springframework:*</exclude>
+                                        <exclude>org.springframework.boot:*</exclude>
+                                        <exclude>javax.sql:*</exclude>
+                                    </excludes>
+                                    <message>
+                                        invoice-mapper must depend on invoice-service-domain only.
+                                        Its facade beans must be constructible without a referential,
+                                        a database, an SMTP endpoint, or a Spring context.
+                                    </message>
+                                </bannedDependencies>
+                            </rules>
+                            <fail>true</fail>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
+</project>

@@ -1,0 +1,59 @@
+package com.example.invoice.service.cache;
+
+import com.example.invoice.service.domain.model.Flow;
+import com.example.invoice.service.domain.model.KeySpace;
+import com.example.invoice.service.domain.model.PartyRegistrationDetails;
+import com.example.invoice.service.domain.port.out.ReferentialGateway;
+import com.example.invoice.service.domain.port.out.ResponseGuard;
+import java.util.List;
+import java.util.Objects;
+import java.util.Optional;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+
+/**
+ * Outbound-flow cache: resolves parties by BDR id.
+ *
+ * <p>Elementary and golden ids share one key space — see {@link KeySpace#BDR_ID}.
+ */
+public final class OutboundPartyRegistrationCache implements AutoCloseable {
+
+    private final ReferentialCacheCore core;
+    private final ExecutorService maintenance;
+
+    public OutboundPartyRegistrationCache(ReferentialGateway gateway, CacheConfig config,
+                                          ResponseGuard guard) {
+        Objects.requireNonNull(gateway, "gateway");
+        this.maintenance = Executors.newVirtualThreadPerTaskExecutor();
+        this.core = new ReferentialCacheCore(KeySpace.BDR_ID, Flow.OUTBOUND, config, guard,
+                maintenance, gateway::searchByBdrId, PartyRegistrationDetails::goldenBdrId);
+    }
+
+    public Optional<PartyRegistrationDetails> findByBdrId(String bdrId) {
+        List<PartyRegistrationDetails> all = core.lookup(bdrId);
+        return all.isEmpty() ? Optional.empty() : Optional.of(all.get(0));
+    }
+
+    public void invalidate(String bdrId) {
+        core.invalidate(bdrId);
+    }
+
+    public void invalidateAll() {
+        core.invalidateAll();
+    }
+
+    public CacheStats stats() {
+        return core.stats();
+    }
+
+    @Override
+    public void close() {
+        maintenance.shutdownNow();
+        try {
+            maintenance.awaitTermination(5, TimeUnit.SECONDS);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+    }
+}

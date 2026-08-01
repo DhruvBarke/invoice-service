@@ -1,0 +1,78 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0
+                             http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+    <parent>
+        <groupId>com.example.invoice</groupId>
+        <artifactId>invoice-service-parent</artifactId>
+        <version>1.0.0-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>invoice-service-cache</artifactId>
+    <name>Invoice Service :: Caching Adapter</name>
+
+    <dependencies>
+        <dependency>
+            <groupId>${project.groupId}</groupId>
+            <artifactId>invoice-service-domain</artifactId>
+        </dependency>
+
+        <!--
+          The existing referential client. Provided scope: this module compiles against it but the
+          invoice service supplies the implementation at runtime.
+
+          NOTE: uncomment and adjust coordinates when adopting into the invoice-service repo, where
+          third-parties is a reactor module. Left commented so this repo builds standalone.
+        -->
+        <!--
+        <dependency>
+            <groupId>${project.groupId}</groupId>
+            <artifactId>third-parties</artifactId>
+            <version>${project.version}</version>
+            <scope>provided</scope>
+        </dependency>
+        -->
+
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-enforcer-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <id>enforce-no-alerting-dependency</id>
+                        <goals><goal>enforce</goal></goals>
+                        <configuration>
+                            <rules>
+                                <bannedDependencies>
+                                    <excludes>
+                                        <!--
+                                          The arrow points alerting -> cache, never back. If the
+                                          cache depended on alerting, "run without alerting" would
+                                          become impossible and a DataSource would be a hard
+                                          requirement for a batch job or a test harness.
+                                        -->
+                                        <exclude>${project.groupId}:invoice-service-alerting</exclude>
+                                    </excludes>
+                                    <message>
+                                        The cache must not depend on the alerting module. They meet
+                                        only at ResponseGuard, a port defined in the domain.
+                                    </message>
+                                </bannedDependencies>
+                            </rules>
+                            <fail>true</fail>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
+</project>

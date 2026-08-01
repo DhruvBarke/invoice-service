@@ -1,0 +1,67 @@
+# Party registration cache and alerting.
+#
+# Adopting into your repo: merge these keys into your existing application.yml, or keep this file
+# and add "invoice-service" to spring.profiles.include.
+
+invoice:
+  service:
+
+    # ---- Cache sizing, per key space -------------------------------------------------------
+    # Separate because SIRET is usually highest-volume and BDR ids are usually most stable.
+    siren:
+      ttl: 30m
+      volatile-ttl: 5m          # corrections and blocks: must react to out-of-band changes
+      max-entries: 50000
+    siret:
+      ttl: 30m
+      volatile-ttl: 5m
+      max-entries: 150000
+    bdr-id:
+      ttl: 1h
+      volatile-ttl: 5m
+      max-entries: 200000
+
+    alerting:
+
+      # SAFETY SWITCH. False installs the pass-through guard: no detection, no quarantine rows,
+      # NO BLOCKING. This is NOT how to stop emails — use alerting.email.enabled below.
+      # Changing this is a reviewable act, not an incident-time toggle.
+      enabled: true
+
+      # ---- What is DETECTED, RECORDED and BLOCKED ----------------------------------------
+      # The mandatory checks (nothing returned, missing SIREN, multiple records for a
+      # single-valued key) always run and are not configurable.
+      detection:
+        inbound-missing-siret: true
+        outbound-missing-siret: true
+        inbound-golden-mismatch: true
+        outbound-golden-mismatch: false   # elementary ids are used deliberately outbound
+
+      # ---- What is EMAILED. Never affects blocking. ---------------------------------------
+      email:
+        enabled: true
+        recipients:
+          - data-quality@example.com
+          - invoice-ops@example.com
+        subject-prefix: "[PROD][party-referential]"
+        # The most important setting: converts an alert storm into one message. Longer is usually
+        # better — aggregation means nothing is lost, only delayed.
+        digest-interval: 5m
+        minimum-servability: SERVABLE     # BLOCKING = only email defects that stop processing
+        immediate-servability: BLOCKING   # a NEW blocking defect flushes at once
+        anomaly-types:
+          - NO_REGISTRATION_FOUND
+          - MISSING_SIREN
+          - MULTIPLE_REGISTRATIONS
+          - MISSING_SIRET
+          - GOLDEN_PARTY_MISMATCH
+        flows: [INBOUND, OUTBOUND]
+        max-fingerprints: 500
+        max-retries: 3
+
+      quarantine:
+        # How quickly an operator correction reaches OTHER instances. Local eviction is immediate.
+        poll-interval: 30s
+        # Retire a row automatically once the referential response is clean again, so a stale
+        # correction stops shadowing since-fixed upstream data.
+        auto-retire-resolved: true

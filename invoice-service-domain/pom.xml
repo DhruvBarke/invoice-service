@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0
+                             http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+    <parent>
+        <groupId>com.example.invoice</groupId>
+        <artifactId>invoice-service-parent</artifactId>
+        <version>1.0.0-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>invoice-service-domain</artifactId>
+    <name>Invoice Service :: Domain</name>
+
+    <dependencies>
+        <!--
+          DELIBERATELY EMPTY (test scope aside).
+          This is the property the whole structure rests on. invoice-mapper compiles against this
+          module alone; anything added here becomes a transitive dependency of the invoice mapper
+          facades and breaks their referential independence. The enforcer rule below turns a
+          well-meaning addition into a build failure rather than a discovery six months later.
+        -->
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-enforcer-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <id>enforce-zero-dependencies</id>
+                        <goals><goal>enforce</goal></goals>
+                        <configuration>
+                            <rules>
+                                <bannedDependencies>
+                                    <searchTransitive>true</searchTransitive>
+                                    <excludes><exclude>*:*</exclude></excludes>
+                                    <includes>
+                                        <include>org.junit.jupiter:*:*:*:test</include>
+                                        <include>org.junit.platform:*:*:*:test</include>
+                                        <include>org.opentest4j:*:*:*:test</include>
+                                        <include>org.apiguardian:*:*:*:test</include>
+                                    </includes>
+                                    <message>
+                                        invoice-service-domain must have NO compile or runtime
+                                        dependencies. invoice-mapper depends on this module alone;
+                                        anything added here leaks into the invoice facade beans and
+                                        destroys their referential independence.
+                                    </message>
+                                </bannedDependencies>
+                            </rules>
+                            <fail>true</fail>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
+</project>

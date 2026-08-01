@@ -1,0 +1,139 @@
+package com.example.invoice.service.cache.referential;
+
+import com.example.invoice.service.domain.model.Address;
+import com.example.invoice.service.domain.model.PartyRegistrationDetails;
+import com.example.invoice.service.domain.model.RegistrationType;
+import com.example.invoice.service.domain.port.out.ReferentialGateway;
+import com.example.thirdparties.referential.PartySearchRequest;
+import com.example.thirdparties.referential.ReferentialServiceApi;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Objects;
+
+/**
+ * Adapts {@link ReferentialServiceApi} to {@link ReferentialGateway}.
+ *
+ * <p><b>THIS FILE IS A TEMPLATE.</b> It is named {@code .java.template} so this repository builds
+ * standalone without the third-parties module on the classpath. When adopting into the
+ * invoice-service repo: rename to {@code .java}, uncomment the third-parties dependency in this
+ * module's pom, and adjust the accessor names below to match your actual DTO.
+ *
+ * <p>This is the only class in the invoice-service modules that imports anything from
+ * third-parties. If the referential's request shape or response DTO changes, this file is the blast
+ * radius.
+ */
+public final class ReferentialServiceApiGateway implements ReferentialGateway {
+
+    private final ReferentialServiceApi referentialService;
+
+    public ReferentialServiceApiGateway(ReferentialServiceApi referentialService) {
+        this.referentialService = Objects.requireNonNull(referentialService, "referentialService");
+    }
+
+    @Override
+    public List<PartyRegistrationDetails> searchByBdrId(String bdrId) {
+        // The referential infers the search axis from the populated slot, so a BDR search carries
+        // no registration type.
+        PartySearchRequest request = new PartySearchRequest();
+        request.setBdrId(bdrId);
+        return execute(request, "BDR_ID", bdrId);
+    }
+
+    @Override
+    public List<PartyRegistrationDetails> searchByRegistration(String registrationId,
+                                                                RegistrationType type) {
+        PartySearchRequest request = new PartySearchRequest();
+        request.setRegistrationId(registrationId);
+        request.setRegistrationType(toReferentialType(type));
+        return execute(request, type.name(), registrationId);
+    }
+
+    private List<PartyRegistrationDetails> execute(PartySearchRequest request,
+                                                    String keySpace, String key) {
+        try {
+            return translate(referentialService.getRegistrationDetails(request));
+        } catch (RuntimeException e) {
+            // Wrapped so callers can distinguish reachable-but-empty from an outage. The first is
+            // cached negatively; the second must never be cached, because it is transient.
+            throw new ReferentialUnavailableException(
+                    "referential search failed for " + keySpace + "=" + key, e);
+        }
+    }
+
+    /** Bridges the domain enum to the referential's own, so the domain never imports third-parties. */
+    private static com.example.thirdparties.referential.RegistrationType toReferentialType(
+            RegistrationType type) {
+        return switch (type) {
+            case SIREN -> com.example.thirdparties.referential.RegistrationType.SIREN;
+            case SIRET -> com.example.thirdparties.referential.RegistrationType.SIRET;
+        };
+    }
+
+    private static List<PartyRegistrationDetails> translate(
+            List<com.example.thirdparties.referential.PartyRegistrationDetails> response) {
+
+        if (response == null || response.isEmpty()) {
+            return List.of();
+        }
+        List<PartyRegistrationDetails> out = new ArrayList<>(response.size());
+        for (var source : response) {
+            if (source == null) {
+                continue;
+            }
+            PartyRegistrationDetails translated = translateOne(source);
+            if (translated != null) {
+                out.add(translated);
+            }
+        }
+        return List.copyOf(out);
+    }
+
+    /**
+     * @return {@code null} when the row has no identity at all.
+     *
+     * <p>Such a row cannot be keyed, recorded or corrected, so it is dropped here rather than
+     * allowed to throw from a record constructor deep inside the cache. If every row of a response
+     * is dropped, the result is an empty list — which the guard reports as
+     * {@code NO_REGISTRATION_FOUND}, the correct outcome.
+     */
+    private static PartyRegistrationDetails translateOne(
+            com.example.thirdparties.referential.PartyRegistrationDetails source) {
+
+        String goldenBdrId = source.getGoldenBdrId();
+        if (goldenBdrId == null || goldenBdrId.isBlank()) {
+            // A record that is its own master often leaves the golden id unset.
+            goldenBdrId = source.getElemBdrId();
+        }
+        if (goldenBdrId == null || goldenBdrId.isBlank()) {
+            return null;
+        }
+
+        return new PartyRegistrationDetails(
+                source.getElemBdrId(), source.getElemName(), source.getElemMnemonic(),
+                source.getThirdPartyBdrId(), source.getThirdPartyBdrName(),
+                source.getThirdPartyMnemonic(), goldenBdrId,
+                source.getName(), source.getMnemonic(),
+                source.getSiren(), source.getSiret(),
+                translateAddresses(source.getAddresses()));
+    }
+
+    private static List<Address> translateAddresses(
+            List<com.example.thirdparties.referential.Address> sources) {
+        if (sources == null || sources.isEmpty()) {
+            return List.of();
+        }
+        List<Address> out = new ArrayList<>(sources.size());
+        for (var a : sources) {
+            if (a == null) {
+                continue;
+            }
+            out.add(new Address(a.getUsage(), a.getLine1(), a.getLine2(), a.getPostalCode(),
+                    a.getCity(),
+                    // countryCode is required by Address; default rather than throw, since an
+                    // address is not worth failing an entire lookup over.
+                    a.getCountryCode() == null ? "FR" : a.getCountryCode(),
+                    a.isPrimary()));
+        }
+        return List.copyOf(out);
+    }
+}
