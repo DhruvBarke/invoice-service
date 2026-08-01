@@ -23,6 +23,17 @@
             <artifactId>invoice-service-domain</artifactId>
         </dependency>
 
+        <!--
+          Registration ports (RegistrationAlertNotifier + RegistrationAlert value types) are
+          implemented by RegistrationAlertEmailBridge in this module. Registration itself is a
+          pure orchestrator with no compile deps back on us, so this dependency edge stays
+          adapter → port and doesn't loop.
+        -->
+        <dependency>
+            <groupId>${project.groupId}</groupId>
+            <artifactId>invoice-service-registration</artifactId>
+        </dependency>
+
         <!-- JDBC only; the DataSource is supplied by the application. -->
         <dependency>
             <groupId>jakarta.annotation</groupId>

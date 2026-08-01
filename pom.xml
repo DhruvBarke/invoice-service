@@ -27,6 +27,7 @@
         <module>invoice-service-cache</module>
         <module>invoice-service-alerting</module>
         <module>invoice-mapper</module>
+        <module>invoice-service-registration</module>
         <module>invoice-service-app</module>
     </modules>
 
@@ -57,6 +58,11 @@
             <dependency>
                 <groupId>${project.groupId}</groupId>
                 <artifactId>invoice-mapper</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>${project.groupId}</groupId>
+                <artifactId>invoice-service-registration</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>

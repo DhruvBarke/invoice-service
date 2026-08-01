@@ -65,3 +65,44 @@ invoice:
         # Retire a row automatically once the referential response is clean again, so a stale
         # correction stops shadowing since-fixed upstream data.
         auto-retire-resolved: true
+
+    # ---- E-invoice registration pipeline --------------------------------------------------
+    # Applies ONLY to invoices arriving over e-invoicing (source=EINVOICE). Manual entry,
+    # SGAI and other sources bypass this pipeline entirely.
+    registration:
+
+      alert:
+        # One comprehensive email per FAILED invoice, listing every captured error. Unlike the
+        # party-registration digest above, these are not aggregated: the email is tied to one
+        # t_invoice_payable row an operator needs to open. Empty list disables alerting (the
+        # errors are still stored on the row).
+        recipients:
+          - invoice-alerts@example.com
+        subject-prefix: "[invoice-service]"
+
+      # Per-business rule activation. A rule omitted for a business is DISABLED for it; a
+      # business omitted entirely gets the empty rule set (invoices register unless the mapper
+      # itself fails). Rule ids come from ValidationRule#id().
+      #
+      # Adding a rule: implement ValidationRule, register it in RegistrationConfig's
+      # rulesById map, then switch it on here per business.
+      businesses:
+        MARK:
+          rules:
+            duplicate-invoice: true      # rule 1 — already-REGISTERED provider_reference
+            attachment-present: true     # rule 2 — no attachment in JSON body nor multipart
+            brokerage-trade-file: true   # rule 3 — BROKERAGE_* needs a .csv/.xlsx trade file
+            line-items-present: true     # rule 4 — CUSTODY/EXCHANGE/CLEARING need line items
+
+        # Other businesses share the generic rules but not the MARK-specific brokerage check.
+        # Switch individual rules on as each business's requirements are confirmed.
+        SGSS:
+          rules:
+            duplicate-invoice: true
+            attachment-present: true
+        GTPS:
+          rules:
+            duplicate-invoice: true
+        GLBA:
+          rules:
+            duplicate-invoice: true
