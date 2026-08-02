@@ -4,6 +4,7 @@ import com.example.invoice.service.registration.error.LifecycleEventType;
 import com.example.invoice.service.registration.error.MappingError;
 import com.example.invoice.service.registration.port.InvoicePayableStore;
 import com.example.invoice.service.registration.port.LifecycleEventPublisher;
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
@@ -127,13 +128,14 @@ public final class JdbcInvoicePayableStore implements InvoicePayableStore, Lifec
 
   // ── Helpers ───────────────────────────────────────────────────────────────
 
-  private String toJson(Object o) {
+  String toJson(Object o) {
     if (o == null) return null;
     try {
       return json.writeValueAsString(o);
-    } catch (Exception e) {
-      // Fallback to toString so a serialiser hiccup never fails the whole persistence step.
-      return "{\"_serialisationError\":\"" + e.getMessage() + "\"}";
+    } catch (JsonProcessingException e) {
+      // A serialiser hiccup must not fail the whole persistence step — the hoisted columns
+      // still carry everything the duplicate check and the ops UI need.
+      return "{\"_serialisationError\":\"" + e.getOriginalMessage() + "\"}";
     }
   }
 

@@ -1,0 +1,51 @@
+{
+  "_comment": "Spec rule 3. MARK/BROKERAGE_PRINCIPAL with a PDF but no trade file. BrokerageTradeFileRule fires MISSING_TRADE_FILE unless the caller supplies a .csv or .xlsx alongside. Note the fee-type tail carries an underscore, which the marker parser must preserve.",
+  "ublVersionId": "2.1",
+  "customizationId": "urn.cpro.gouv.fr:1p0:einvoicingextract#",
+  "profileId": "S1",
+  "id": "BKP0126014",
+  "issueDate": "2026-04-14",
+  "invoiceTypeCode": { "value": "380" },
+  "documentCurrencyCode": { "value": "EUR" },
+  "accountingSupplierParty": {
+    "party": {
+      "partyLegalEntity": {
+        "registrationName": "BROKER SA",
+        "companyId": { "schemeID": "0002", "value": "999888777" }
+      }
+    }
+  },
+  "accountingCustomerParty": {
+    "party": {
+      "endpointId": { "schemeID": "0225", "value": "552120222_MARK_BROKERAGE_PRINCIPAL" },
+      "partyLegalEntity": {
+        "registrationName": "SOCIETE GENERALE",
+        "companyId": { "schemeID": "0002", "value": "552120222" }
+      }
+    }
+  },
+  "legalMonetaryTotal": {
+    "payableAmount": { "currencyID": "EUR", "value": 12500.00 }
+  },
+  "invoiceLine": [
+    {
+      "id": "1",
+      "lineExtensionAmount": { "currencyID": "EUR", "value": 12500.00 },
+      "invoicedQuantity": { "unitCode": "C62", "value": 1 },
+      "item": { "name": "BROKERAGE COMMISSION" }
+    }
+  ],
+  "additionalDocumentReference": [
+    {
+      "id": { "value": "Invoice" },
+      "documentType": "PDF",
+      "attachment": {
+        "embeddedDocumentBinaryObject": {
+          "mimeCode": "application/pdf",
+          "filename": "BKP0126014.pdf",
+          "file": "JVBERi0xLjQKJSVFT0YK"
+        }
+      }
+    }
+  ]
+}

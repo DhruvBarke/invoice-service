@@ -1,0 +1,43 @@
+{
+  "_comment": "Spec rule 4. MARK/CUSTODY with an attachment but NO invoiceLine array. Expected: LineItemsPresentRule fires EMPTY_LINE_ITEMS, the row lands INCOMPLETE, and no lifecycle event is queued because users can add the missing lines in-app.",
+  "ublVersionId": "2.1",
+  "customizationId": "urn.cpro.gouv.fr:1p0:einvoicingextract#",
+  "profileId": "S1",
+  "id": "CUS0226369",
+  "issueDate": "2026-04-14",
+  "invoiceTypeCode": { "value": "380" },
+  "documentCurrencyCode": { "value": "EUR" },
+  "accountingSupplierParty": {
+    "party": {
+      "partyLegalEntity": {
+        "registrationName": "EUROCLEAR FRANCE/ESES",
+        "companyId": { "schemeID": "0002", "value": "784608416" }
+      }
+    }
+  },
+  "accountingCustomerParty": {
+    "party": {
+      "endpointId": { "schemeID": "0225", "value": "552120222_MARK_CUSTODY" },
+      "partyLegalEntity": {
+        "registrationName": "SOCIETE GENERALE",
+        "companyId": { "schemeID": "0002", "value": "552120222" }
+      }
+    }
+  },
+  "legalMonetaryTotal": {
+    "payableAmount": { "currencyID": "EUR", "value": 751.85 }
+  },
+  "additionalDocumentReference": [
+    {
+      "id": { "value": "Invoice" },
+      "documentType": "PDF",
+      "attachment": {
+        "embeddedDocumentBinaryObject": {
+          "mimeCode": "application/pdf",
+          "filename": "CUS0226369.pdf",
+          "file": "JVBERi0xLjQKJSVFT0YK"
+        }
+      }
+    }
+  ]
+}

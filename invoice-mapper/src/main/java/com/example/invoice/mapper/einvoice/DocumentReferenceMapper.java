@@ -5,8 +5,10 @@ import com.example.invoice.mapper.einvoice.model.invoice.Attachment;
 import com.example.invoice.mapper.einvoice.model.invoice.EmbeddedDocument;
 import com.example.invoice.mapper.einvoice.model.invoice.SchemeID;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Base64;
 import java.util.List;
+import java.util.Objects;
 
 /**
  * Outbound-only bridge between the payable side's two opaque attachment ids
@@ -59,6 +61,30 @@ public final class DocumentReferenceMapper {
       if (bytes == null) {
         throw new IllegalArgumentException("attachment bytes must be non-null (empty is allowed)");
       }
+    }
+
+    /** Value semantics over the content — see the note on {@code ExtractedAttachment}. */
+    @Override
+    public boolean equals(Object o) {
+      if (this == o) return true;
+      if (!(o instanceof AttachmentPayload other)) return false;
+      return Objects.equals(id, other.id)
+          && Objects.equals(filename, other.filename)
+          && Objects.equals(mimeType, other.mimeType)
+          && Arrays.equals(bytes, other.bytes);
+    }
+
+    @Override
+    public int hashCode() {
+      return 31 * Objects.hash(id, filename, mimeType) + Arrays.hashCode(bytes);
+    }
+
+    /** {@code bytes} is non-null by construction, so the length needs no guard here. */
+    @Override
+    public String toString() {
+      return "AttachmentPayload[id=" + id + ", filename=" + filename
+          + ", mimeType=" + mimeType
+          + ", bytes=" + bytes.length + " byte(s)]";
     }
   }
 

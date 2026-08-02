@@ -44,8 +44,19 @@ public final class JdbcExistingInvoicePayableLookup implements ExistingInvoicePa
       // Duplicate check failing is an infrastructure fault — better to surface as blocking than
       // to silently allow a possible duplicate through. The orchestrator's rule loop will
       // catch this and turn it into a MAPPING_ERROR entry.
-      throw new RuntimeException("duplicate check failed for providerReference="
-          + providerReference, e);
+      throw new DuplicateCheckException(
+          "duplicate check failed for providerReference=" + providerReference, e);
+    }
+  }
+
+  /**
+   * Dedicated type rather than a bare {@code RuntimeException}, so a caller that wants to
+   * distinguish "the duplicate check itself broke" from "the mapper broke" can catch this
+   * specifically.
+   */
+  public static class DuplicateCheckException extends RuntimeException {
+    public DuplicateCheckException(String message, Throwable cause) {
+      super(message, cause);
     }
   }
 }

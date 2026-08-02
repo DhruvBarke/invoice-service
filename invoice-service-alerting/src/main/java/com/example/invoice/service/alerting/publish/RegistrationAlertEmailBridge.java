@@ -2,8 +2,6 @@ package com.example.invoice.service.alerting.publish;
 
 import com.example.invoice.service.registration.error.MappingError;
 import com.example.invoice.service.registration.port.RegistrationAlertNotifier;
-import java.io.PrintWriter;
-import java.io.StringWriter;
 import java.lang.System.Logger.Level;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
@@ -29,8 +27,13 @@ public final class RegistrationAlertEmailBridge implements RegistrationAlertNoti
   private static final System.Logger LOG =
       System.getLogger(RegistrationAlertEmailBridge.class.getName());
 
-  private static final DateTimeFormatter TS =
-      DateTimeFormatter.ISO_INSTANT;
+  private static final DateTimeFormatter TS = DateTimeFormatter.ISO_INSTANT;
+
+  /** Frames rendered per throwable before truncating. */
+  private static final int STACK_FRAME_LIMIT = 12;
+
+  /** How far down the {@code getCause()} chain to walk. */
+  private static final int CAUSE_CHAIN_LIMIT = 5;
 
   private final AlertEmailPort emailPort;
   private final List<String> recipients;
@@ -136,10 +139,40 @@ public final class RegistrationAlertEmailBridge implements RegistrationAlertNoti
     return b.toString();
   }
 
-  private static String stack(Throwable t) {
-    StringWriter sw = new StringWriter(512);
-    t.printStackTrace(new PrintWriter(sw));
-    return sw.toString();
+  /**
+   * Renders the top {@value #STACK_FRAME_LIMIT} frames plus the cause chain.
+   *
+   * <p>Hand-rolled rather than {@code printStackTrace}: a full trace in an email is usually
+   * hundreds of frames of framework noise, and the frames that identify the defect are always
+   * at the top. Truncating keeps the message readable and bounds the size of a mail that may
+   * be sent once per failed invoice.
+   */
+  static String stack(Throwable t) {
+    StringBuilder sb = new StringBuilder(512);
+    Throwable current = t;
+    int depth = 0;
+    while (current != null && depth < CAUSE_CHAIN_LIMIT) {
+      if (depth > 0) {
+        sb.append("Caused by: ");
+      }
+      sb.append(current.getClass().getName());
+      if (current.getMessage() != null) {
+        sb.append(": ").append(current.getMessage());
+      }
+      sb.append('\n');
+
+      StackTraceElement[] frames = current.getStackTrace();
+      int shown = Math.min(frames.length, STACK_FRAME_LIMIT);
+      for (int i = 0; i < shown; i++) {
+        sb.append("    at ").append(frames[i]).append('\n');
+      }
+      if (frames.length > shown) {
+        sb.append("    ... ").append(frames.length - shown).append(" more frame(s)\n");
+      }
+      current = current.getCause();
+      depth++;
+    }
+    return sb.toString();
   }
 
   private static String indent(String s, String prefix) {

@@ -34,11 +34,17 @@ public final class EInvoiceMarkerParser {
     String siren = raw.substring(0, first);
 
     int second = raw.indexOf('_', first + 1);
-    if (second < 0 || second == raw.length() - 1) {
-      // Only one underscore, or no fee-type tail after the second.
-      String businessToken = raw.substring(first + 1);
-      Business business = Business.tryParse(businessToken).orElse(null);
-      return new EInvoiceMarker(siren, business, null, endpointValue);
+    if (second < 0) {
+      // One underscore only: everything after it is the business token.
+      return new EInvoiceMarker(
+          siren, Business.tryParse(raw.substring(first + 1)).orElse(null), null, endpointValue);
+    }
+    if (second == raw.length() - 1) {
+      // A second underscore with nothing after it. The business is still readable — it sits
+      // BETWEEN the two separators, so the trailing one must be excluded from the token.
+      return new EInvoiceMarker(
+          siren, Business.tryParse(raw.substring(first + 1, second)).orElse(null),
+          null, endpointValue);
     }
 
     String businessToken = raw.substring(first + 1, second);

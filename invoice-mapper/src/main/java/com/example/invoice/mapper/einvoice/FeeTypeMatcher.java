@@ -56,16 +56,6 @@ public final class FeeTypeMatcher {
   /** Upper bound on distinct extracted fee-type spellings held per index. */
   private static final int MAX_CACHE_ENTRIES = 10_000;
 
-  /**
-   * Tokens stripped during tokenisation because they carry no discriminating meaning. Applied
-   * symmetrically to both the raw code and the referential value.
-   *
-   * <p><b>Only add a token here if it never distinguishes two referential entries.</b> If the
-   * referential holds both {@code Custody} and a separate {@code Fee} concept, removing
-   * {@code FEE} would silently collapse them. Left empty by default.
-   */
-  private static final Set<String> NOISE_TOKENS = Set.of();
-
   private final FeeTypeProvider feeTypeProvider;
 
   /** Rebuilt only when the provider returns a different map instance. */
@@ -348,8 +338,14 @@ public final class FeeTypeMatcher {
   // ------------------------------------------------------------------
 
   /**
-   * Splits on {@code _ - space . /} into an upper-cased token set, dropping any token listed
-   * in {@link #NOISE_TOKENS}. Single pass, no regex.
+   * Splits on {@code _ - space . /} into an upper-cased token set. Single pass, no regex.
+   *
+   * <p><b>On noise tokens.</b> An earlier version filtered a {@code NOISE_TOKENS} set here so a
+   * word like {@code FEE} could be ignored when it never distinguishes two referential entries.
+   * The set shipped empty, which made the filter unreachable — and an unreachable filter is a
+   * claim the code cannot back up. If a noise word does appear in production codes, reinstate
+   * the filter together with the entries that justify it, and extend this class's tests to pin
+   * the collapse it is meant to cause.
    */
   static Set<String> tokenize(String s) {
     Set<String> tokens = new HashSet<>(4);
@@ -360,10 +356,7 @@ public final class FeeTypeMatcher {
       char c = (i < len) ? s.charAt(i) : '_'; // sentinel flushes final token
       if (c == '_' || c == '-' || c == ' ' || c == '.' || c == '/') {
         if (i > start) {
-          String token = s.substring(start, i).toUpperCase(Locale.ROOT);
-          if (!NOISE_TOKENS.contains(token)) {
-            tokens.add(token);
-          }
+          tokens.add(s.substring(start, i).toUpperCase(Locale.ROOT));
         }
         start = i + 1;
       }

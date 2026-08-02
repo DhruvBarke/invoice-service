@@ -1,0 +1,38 @@
+{
+  "_comment": "Spec rule 2. MARK/CUSTODY with line items but no additionalDocumentReference at all. When the caller also supplies no multipart file, AttachmentPresentRule fires MISSING_ATTACHMENT -> CANCELLED + SUSPENDED(JUSTIF_ABS).",
+  "ublVersionId": "2.1",
+  "customizationId": "urn.cpro.gouv.fr:1p0:einvoicingextract#",
+  "profileId": "S1",
+  "id": "CUS0226370",
+  "issueDate": "2026-04-14",
+  "invoiceTypeCode": { "value": "380" },
+  "documentCurrencyCode": { "value": "EUR" },
+  "accountingSupplierParty": {
+    "party": {
+      "partyLegalEntity": {
+        "registrationName": "EUROCLEAR FRANCE/ESES",
+        "companyId": { "schemeID": "0002", "value": "784608416" }
+      }
+    }
+  },
+  "accountingCustomerParty": {
+    "party": {
+      "endpointId": { "schemeID": "0225", "value": "552120222_MARK_CUSTODY" },
+      "partyLegalEntity": {
+        "registrationName": "SOCIETE GENERALE",
+        "companyId": { "schemeID": "0002", "value": "552120222" }
+      }
+    }
+  },
+  "legalMonetaryTotal": {
+    "payableAmount": { "currencyID": "EUR", "value": 751.85 }
+  },
+  "invoiceLine": [
+    {
+      "id": "1",
+      "lineExtensionAmount": { "currencyID": "EUR", "value": 626.54 },
+      "invoicedQuantity": { "unitCode": "C62", "value": 1 },
+      "item": { "name": "REGLEMENT LIVRAISON" }
+    }
+  ]
+}

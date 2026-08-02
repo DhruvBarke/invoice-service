@@ -1,0 +1,28 @@
+{
+  "_comment": "A bare BROKERAGE token. It ties at Jaccard 0.5 against both BROKERAGE_PRINCIPAL and BROKERAGE_AGENCY, so the matcher refuses rather than guessing. Expected: FEETYPE_UNRESOLVED -> CANCELLED + REFUSED(NON_CONFORME). This is the case the matcher's no-collisions guarantee exists for.",
+  "ublVersionId": "2.1",
+  "customizationId": "urn.cpro.gouv.fr:1p0:einvoicingextract#",
+  "profileId": "S1",
+  "id": "AMB0000001",
+  "issueDate": "2026-04-14",
+  "invoiceTypeCode": { "value": "380" },
+  "documentCurrencyCode": { "value": "EUR" },
+  "accountingSupplierParty": {
+    "party": {
+      "partyLegalEntity": {
+        "companyId": { "schemeID": "0002", "value": "999888777" }
+      }
+    }
+  },
+  "accountingCustomerParty": {
+    "party": {
+      "endpointId": { "schemeID": "0225", "value": "552120222_MARK_BROKERAGE" },
+      "partyLegalEntity": {
+        "companyId": { "schemeID": "0002", "value": "552120222" }
+      }
+    }
+  },
+  "legalMonetaryTotal": {
+    "payableAmount": { "currencyID": "EUR", "value": 100.00 }
+  }
+}

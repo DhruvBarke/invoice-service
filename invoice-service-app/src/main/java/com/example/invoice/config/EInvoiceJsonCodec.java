@@ -7,6 +7,7 @@ import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.PropertyAccessor;
 import com.fasterxml.jackson.core.JsonGenerator;
 import com.fasterxml.jackson.core.JsonParser;
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.JsonToken;
 import com.fasterxml.jackson.databind.DeserializationContext;
 import com.fasterxml.jackson.databind.DeserializationFeature;
@@ -75,16 +76,16 @@ public final class EInvoiceJsonCodec {
   public static Invoice fromJson(String json) {
     try {
       return MAPPER.readValue(json, Invoice.class);
-    } catch (Exception e) {
-      throw new IllegalArgumentException("JSON→Invoice failed: " + e.getMessage(), e);
+    } catch (JsonProcessingException e) {
+      throw new IllegalArgumentException("JSON→Invoice failed: " + e.getOriginalMessage(), e);
     }
   }
 
   public static String toJson(Invoice invoice) {
     try {
       return MAPPER.writeValueAsString(invoice);
-    } catch (Exception e) {
-      throw new IllegalStateException("Invoice→JSON failed: " + e.getMessage(), e);
+    } catch (JsonProcessingException e) {
+      throw new IllegalStateException("Invoice→JSON failed: " + e.getOriginalMessage(), e);
     }
   }
 

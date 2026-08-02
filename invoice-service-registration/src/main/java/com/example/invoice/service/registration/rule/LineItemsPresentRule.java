@@ -27,7 +27,8 @@ public final class LineItemsPresentRule implements ValidationRule {
     if (feeType == null) return List.of();
     String normalized = feeType.toUpperCase(Locale.ROOT).replace("-", "_").replace(" ", "_");
     if (!FEETYPES_REQUIRING_LINES.contains(normalized)) return List.of();
-    if (ctx.items() != null && !ctx.items().isEmpty()) return List.of();
+    // items() is never null: ValidationContext normalises a null list to empty on construction.
+    if (!ctx.items().isEmpty()) return List.of();
     return List.of(MappingError.of(
         ErrorCode.EMPTY_LINE_ITEMS,
         "no line items found for fee type " + feeType

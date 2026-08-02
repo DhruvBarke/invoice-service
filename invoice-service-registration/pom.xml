@@ -42,6 +42,25 @@
             <groupId>org.junit.jupiter</groupId>
             <artifactId>junit-jupiter</artifactId>
         </dependency>
+        <!--
+          TEST SCOPE ONLY. The tests drive the pipeline from realistic e-invoice JSON in
+          src/test/resources rather than from hand-built object graphs, because a fixture that
+          mirrors what a PDP actually posts catches binding-shape mistakes that a builder chain
+          silently accepts. Jackson never reaches the main classpath — the enforcer rule above
+          governs compile scope, and this stays behind it.
+        -->
+        <dependency>
+            <groupId>com.fasterxml.jackson.core</groupId>
+            <artifactId>jackson-databind</artifactId>
+            <version>2.17.2</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>com.fasterxml.jackson.datatype</groupId>
+            <artifactId>jackson-datatype-jsr310</artifactId>
+            <version>2.17.2</version>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
 
     <build>

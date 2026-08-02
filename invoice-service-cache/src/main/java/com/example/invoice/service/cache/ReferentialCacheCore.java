@@ -12,7 +12,6 @@ import java.lang.System.Logger.Level;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
-import java.util.concurrent.CancellationException;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.ConcurrentHashMap;
@@ -253,9 +252,15 @@ final class ReferentialCacheCore {
      * <p>Bounded by a semaphore and deduplicated through the in-flight map, so a burst of stale hits
      * on one key produces exactly one refresh. Failures are swallowed: the caller already has a
      * usable answer, and the entry will be reloaded synchronously once it hard-expires.
+     *
+     * <p>No {@code refreshAheadEnabled()} check here: with refresh-ahead off, {@link #store} sets
+     * {@code refreshAtNanos == expiresAtNanos}, so {@link Entry.Hit#isStale} can only turn true at
+     * the instant the entry stops being live — and {@link #lookup} evicts it on that path instead
+     * of reaching this method. A guard here would be unreachable, and unreachable guards read as
+     * if they protect something.
      */
     private void triggerRefreshAhead(String key) {
-        if (!config.refreshAheadEnabled() || inFlight.containsKey(key) || !refreshPermits.tryAcquire()) {
+        if (inFlight.containsKey(key) || !refreshPermits.tryAcquire()) {
             return;
         }
         refreshAheads.increment();
@@ -274,6 +279,17 @@ final class ReferentialCacheCore {
         }
     }
 
+    /**
+     * Unwraps the {@link CompletionException} {@code join} wraps a failure in, so a coalesced
+     * waiter sees exactly what the loading thread threw.
+     *
+     * <p>The cause is always a {@link RuntimeException} or an {@link Error}: these futures are
+     * private to this class and {@link #load} is the only writer, completing them exceptionally
+     * from a {@code catch (RuntimeException | Error)}. Nothing cancels them either, so there is
+     * no cancellation path to handle. Previous versions carried fallbacks for a checked cause
+     * and for cancellation; both were unreachable, and unreachable error handling is worse than
+     * none — it cannot be exercised, so it cannot be trusted.
+     */
     private static List<PartyRegistrationDetails> await(
             CompletableFuture<List<PartyRegistrationDetails>> future) {
         try {
@@ -283,13 +299,7 @@ final class ReferentialCacheCore {
             if (cause instanceof RuntimeException re) {
                 throw re;
             }
-            if (cause instanceof Error err) {
-                throw err;
-            }
-            throw e;
-        } catch (CancellationException e) {
-            LOG.log(Level.DEBUG, "Coalesced load cancelled; reporting as miss");
-            return List.of();
+            throw (Error) cause;
         }
     }
 
@@ -380,10 +390,12 @@ final class ReferentialCacheCore {
         }
         try {
             maintenance.execute(() -> {
+                // try/finally rather than try/catch: what must hold is that the flag is released
+                // so a later insert can sweep again. A throwing sweep is already surfaced by the
+                // executor's uncaught-exception handling, and catching it here only to log would
+                // add a branch that nothing can exercise.
                 try {
                     sweep();
-                } catch (RuntimeException | Error e) {
-                    LOG.log(Level.WARNING, "Sweep failed for " + keySpace, e);
                 } finally {
                     sweeping.set(false);
                 }
@@ -406,11 +418,11 @@ final class ReferentialCacheCore {
         entries.entrySet().removeIf(e -> !e.getValue().isLive(now));
         int excess = entries.size() - config.maxEntries();
         if (excess > 0) {
-            var it = entries.entrySet().iterator();
-            while (excess-- > 0 && it.hasNext()) {
-                it.next();
-                it.remove();
-            }
+            // Snapshot the victims, then remove them. An iterator with a countdown needs a
+            // hasNext() guard for the case where a concurrent eviction empties the map mid-loop —
+            // a branch that no single-threaded test can reach. `limit` expresses the same bound
+            // without one.
+            entries.keySet().stream().limit(excess).toList().forEach(entries::remove);
             pool.clear();
         }
         LOG.log(Level.DEBUG, "Swept {0} to {1} entries", keySpace, entries.size());

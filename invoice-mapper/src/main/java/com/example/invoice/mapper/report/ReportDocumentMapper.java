@@ -64,8 +64,10 @@ public final class ReportDocumentMapper {
    * / slash).
    */
   private static String composeTransmissionId(InvoicePayableModel model, LocalDateTime at) {
-    String siren = model.getSgEntity() != null ? model.getSgEntity() : "UNKNOWN";
+    // sgEntity is guaranteed present: toReportDocument rejects a null or blank one before
+    // reaching here, because a transmission with no declarant has nobody to attribute it to.
+    // invoiceReference is not guaranteed, so it keeps its fallback.
     String ref = model.getInvoiceReference() != null ? model.getInvoiceReference() : "NOREF";
-    return siren + "_" + ref + "_" + at.format(DATE_TIME_FORMAT);
+    return model.getSgEntity() + "_" + ref + "_" + at.format(DATE_TIME_FORMAT);
   }
 }

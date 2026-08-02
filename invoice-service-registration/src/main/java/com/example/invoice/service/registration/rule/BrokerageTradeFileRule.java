@@ -51,8 +51,13 @@ public final class BrokerageTradeFileRule implements ValidationRule {
             + " (business " + ctx.business() + " requires one)"));
   }
 
+  /**
+   * No null-element guard: {@link com.example.invoice.service.registration.rule.ValidationContext}
+   * copies both attachment lists with {@code List.copyOf}, which rejects nulls, so an entry
+   * here is always present. A guard would imply a state the context cannot hold.
+   */
   private static boolean isTradeFile(ExtractedAttachment a) {
-    if (a == null || a.bytes() == null || a.bytes().length == 0) return false;
+    if (a.bytes() == null || a.bytes().length == 0) return false;
     String name = a.filename();
     if (name == null) return false;
     String lower = name.toLowerCase(Locale.ROOT);

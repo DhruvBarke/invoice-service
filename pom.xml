@@ -36,6 +36,8 @@
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <junit.version>5.10.2</junit.version>
         <spring-boot.version>3.3.4</spring-boot.version>
+        <jacoco.version>0.8.12</jacoco.version>
+        <h2.version>2.2.224</h2.version>
     </properties>
 
     <dependencyManagement>
@@ -101,8 +103,95 @@
                     <artifactId>maven-javadoc-plugin</artifactId>
                     <version>3.6.3</version>
                 </plugin>
+                <plugin>
+                    <groupId>org.jacoco</groupId>
+                    <artifactId>jacoco-maven-plugin</artifactId>
+                    <version>${jacoco.version}</version>
+                </plugin>
             </plugins>
         </pluginManagement>
+
+        <plugins>
+            <!--
+              COVERAGE GATE
+              100% line AND branch coverage, enforced at `verify`. The build fails below that,
+              which is what the PR gate needs.
+
+              The exclusions below are data-holder classes, not logic:
+
+                */model/**            The vendored UBL Invoice graph (63 classes) and the Flux 10
+                                      ReportModel graph (34). Lombok-generated getters, setters,
+                                      builders, equals/hashCode/toString. Covering them means
+                                      asserting that a setter sets — it proves the Lombok version,
+                                      not our code. They carry no branches of ours.
+
+                */config/**           The Spring composition root: @Bean methods and
+                                      @ConfigurationProperties holders. Exercising these means
+                                      standing up a context, which tests wiring rather than
+                                      behaviour. The classes those beans construct ARE covered,
+                                      through their own unit tests.
+
+                */package-info        No executable code.
+
+              Everything else — mappers, rules, the error taxonomy, the orchestrator, the JDBC
+              adapters' SQL-building, the alert body formatter — is held to the full bar.
+            -->
+            <plugin>
+                <groupId>org.jacoco</groupId>
+                <artifactId>jacoco-maven-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <id>prepare-agent</id>
+                        <goals><goal>prepare-agent</goal></goals>
+                    </execution>
+                    <execution>
+                        <id>report</id>
+                        <phase>test</phase>
+                        <goals><goal>report</goal></goals>
+                    </execution>
+                    <!--
+                      NOTE ON VACUOUS PASSES
+                      jacoco:check is a no-op when no exec file exists, so a module with zero
+                      tests would sail through the gate rather than fail it. haltOnFailure with
+                      an explicit BUNDLE rule still cannot see a bundle that was never produced
+                      — the protection is that every module carrying main classes also carries
+                      tests. invoice-service-app is the sole exception: its whole source tree is
+                      the excluded config/ package, so it legitimately has nothing to measure.
+                    -->
+                    <execution>
+                        <id>check-coverage</id>
+                        <phase>verify</phase>
+                        <goals><goal>check</goal></goals>
+                        <configuration>
+                            <rules>
+                                <rule>
+                                    <element>BUNDLE</element>
+                                    <limits>
+                                        <limit>
+                                            <counter>LINE</counter>
+                                            <value>COVEREDRATIO</value>
+                                            <minimum>1.00</minimum>
+                                        </limit>
+                                        <limit>
+                                            <counter>BRANCH</counter>
+                                            <value>COVEREDRATIO</value>
+                                            <minimum>1.00</minimum>
+                                        </limit>
+                                    </limits>
+                                </rule>
+                            </rules>
+                        </configuration>
+                    </execution>
+                </executions>
+                <configuration>
+                    <excludes>
+                        <exclude>**/model/**</exclude>
+                        <exclude>**/config/**</exclude>
+                        <exclude>**/package-info.class</exclude>
+                    </excludes>
+                </configuration>
+            </plugin>
+        </plugins>
     </build>
 
     <profiles>

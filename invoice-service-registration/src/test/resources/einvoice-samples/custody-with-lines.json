@@ -1,0 +1,91 @@
+{
+  "_comment": "Happy path. MARK/CUSTODY, one line item, one PDF attachment embedded as base64. Every rule in the MARK set passes, so this registers cleanly.",
+  "ublVersionId": "2.1",
+  "customizationId": "urn.cpro.gouv.fr:1p0:einvoicingextract#",
+  "profileId": "S1",
+  "id": "CUS0226368",
+  "issueDate": "2026-04-14",
+  "invoiceTypeCode": { "value": "380" },
+  "documentCurrencyCode": { "value": "EUR" },
+  "note": [
+    { "subjectCode": "BAR", "text": "B2B" }
+  ],
+  "invoicePeriod": {
+    "startDate": "2026-04-01",
+    "endDate": "2026-04-30"
+  },
+  "accountingSupplierParty": {
+    "party": {
+      "endpointId": { "schemeID": "0225", "value": "784608416" },
+      "partyLegalEntity": {
+        "registrationName": "EUROCLEAR FRANCE/ESES",
+        "companyId": { "schemeID": "0002", "value": "784608416" }
+      },
+      "postalAddress": {
+        "streetName": "10-12 place de la Bourse",
+        "cityName": "PARIS",
+        "postalZone": "75002",
+        "country": { "identificationCode": { "value": "FR" } }
+      }
+    }
+  },
+  "accountingCustomerParty": {
+    "party": {
+      "endpointId": { "schemeID": "0225", "value": "552120222_MARK_CUSTODY" },
+      "partyLegalEntity": {
+        "registrationName": "SOCIETE GENERALE",
+        "companyId": { "schemeID": "0002", "value": "552120222" }
+      },
+      "postalAddress": {
+        "cityName": "PARIS",
+        "postalZone": "75009",
+        "country": { "identificationCode": { "value": "FR" } }
+      }
+    }
+  },
+  "legalMonetaryTotal": {
+    "lineExtensionAmount": { "currencyID": "EUR", "value": 626.54 },
+    "taxExclusiveAmount": { "currencyID": "EUR", "value": 626.54 },
+    "taxInclusiveAmount": { "currencyID": "EUR", "value": 751.85 },
+    "payableAmount": { "currencyID": "EUR", "value": 751.85 }
+  },
+  "taxTotal": [
+    {
+      "taxAmount": { "currencyID": "EUR", "value": 125.31 },
+      "taxSubtotal": [
+        {
+          "taxableAmount": { "currencyID": "EUR", "value": 626.54 },
+          "taxAmount": { "currencyID": "EUR", "value": 125.31 },
+          "taxCategory": {
+            "id": { "value": "S" },
+            "percent": 20.00,
+            "taxScheme": { "id": { "value": "VAT" } }
+          }
+        }
+      ]
+    }
+  ],
+  "invoiceLine": [
+    {
+      "id": "1",
+      "lineExtensionAmount": { "currencyID": "EUR", "value": 626.54 },
+      "invoicedQuantity": { "unitCode": "C62", "value": 1 },
+      "item": { "name": "REGLEMENT LIVRAISON" },
+      "price": { "priceAmount": { "currencyID": "EUR", "value": 751.85 } }
+    }
+  ],
+  "additionalDocumentReference": [
+    {
+      "id": { "value": "Invoice" },
+      "documentType": "PDF",
+      "documentDescription": "LISIBLE - custody fee invoice",
+      "attachment": {
+        "embeddedDocumentBinaryObject": {
+          "mimeCode": "application/pdf",
+          "filename": "CUS0226368.pdf",
+          "file": "JVBERi0xLjQKJSVFT0YK"
+        }
+      }
+    }
+  ]
+}

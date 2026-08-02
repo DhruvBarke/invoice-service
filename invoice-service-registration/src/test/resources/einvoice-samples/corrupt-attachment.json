@@ -1,0 +1,48 @@
+{
+  "_comment": "The attachment claims to be a PDF but its decoded bytes don't start with %PDF. MultipartExtractionService's magic-byte check drops it, so the pipeline sees zero JSON attachments and AttachmentPresentRule fires exactly as if none had been sent. This is why the trade-file rule doesn't need its own corruption check.",
+  "ublVersionId": "2.1",
+  "customizationId": "urn.cpro.gouv.fr:1p0:einvoicingextract#",
+  "profileId": "S1",
+  "id": "COR0000001",
+  "issueDate": "2026-04-14",
+  "invoiceTypeCode": { "value": "380" },
+  "documentCurrencyCode": { "value": "EUR" },
+  "accountingSupplierParty": {
+    "party": {
+      "partyLegalEntity": {
+        "companyId": { "schemeID": "0002", "value": "999888777" }
+      }
+    }
+  },
+  "accountingCustomerParty": {
+    "party": {
+      "endpointId": { "schemeID": "0225", "value": "552120222_MARK_CUSTODY" },
+      "partyLegalEntity": {
+        "companyId": { "schemeID": "0002", "value": "552120222" }
+      }
+    }
+  },
+  "legalMonetaryTotal": {
+    "payableAmount": { "currencyID": "EUR", "value": 100.00 }
+  },
+  "invoiceLine": [
+    {
+      "id": "1",
+      "lineExtensionAmount": { "currencyID": "EUR", "value": 100.00 },
+      "item": { "name": "SOME FEE" }
+    }
+  ],
+  "additionalDocumentReference": [
+    {
+      "id": { "value": "Invoice" },
+      "documentType": "PDF",
+      "attachment": {
+        "embeddedDocumentBinaryObject": {
+          "mimeCode": "application/pdf",
+          "filename": "corrupt.pdf",
+          "file": "bm90LWEtcGRmLWF0LWFsbA=="
+        }
+      }
+    }
+  ]
+}

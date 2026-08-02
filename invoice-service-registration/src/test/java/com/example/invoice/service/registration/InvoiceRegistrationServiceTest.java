@@ -1,23 +1,19 @@
 package com.example.invoice.service.registration;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.example.invoice.mapper.einvoice.EInvoiceFacadeMapper;
 import com.example.invoice.mapper.einvoice.FeeTypeMatcher;
 import com.example.invoice.mapper.einvoice.MultipartExtractionService;
 import com.example.invoice.mapper.einvoice.MultipartExtractionService.ExtractedAttachment;
-import com.example.invoice.mapper.einvoice.model.invoice.AccountingCustomerParty;
-import com.example.invoice.mapper.einvoice.model.invoice.AccountingSupplierParty;
-import com.example.invoice.mapper.einvoice.model.invoice.CodedValue;
 import com.example.invoice.mapper.einvoice.model.invoice.Invoice;
-import com.example.invoice.mapper.einvoice.model.invoice.Party;
-import com.example.invoice.mapper.einvoice.model.invoice.PartyLegalEntity;
-import com.example.invoice.mapper.einvoice.model.invoice.SchemeID;
-import com.example.invoice.service.domain.model.PartyRegistrationDetails;
-import com.example.invoice.service.domain.port.in.PartyRegistrationLookup;
+import com.example.invoice.service.domain.port.in.PartyRegistrationUnavailableException;
+import com.example.invoice.service.domain.port.in.UnavailabilityReason;
 import com.example.invoice.service.registration.error.ErrorCode;
 import com.example.invoice.service.registration.error.LifecycleEventType;
 import com.example.invoice.service.registration.error.MappingError;
@@ -30,67 +26,26 @@ import com.example.invoice.service.registration.rule.BrokerageTradeFileRule;
 import com.example.invoice.service.registration.rule.DuplicateInvoiceRule;
 import com.example.invoice.service.registration.rule.LineItemsPresentRule;
 import com.example.invoice.service.registration.rule.ValidationRegistry;
-import java.util.ArrayList;
+import com.example.invoice.service.registration.testsupport.Fixtures;
+import com.example.invoice.service.registration.testsupport.Stubs;
 import java.util.List;
-import java.util.Map;
-import java.util.Optional;
-import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
 /**
- * End-to-end pipeline behaviour, driven entirely from in-memory stubs.
- *
- * <p>This class existing without a Spring context, a DataSource or an SMTP endpoint is the
- * point of the module's enforcer rule — if a future change makes the orchestrator need any of
- * those, this file stops compiling.
+ * End-to-end pipeline behaviour, driven from the JSON fixtures in
+ * {@code src/test/resources/einvoice-samples}.
  */
 class InvoiceRegistrationServiceTest {
 
-  private static final PartyRegistrationDetails ACME = new PartyRegistrationDetails(
-      "ELEM-9", "Lyon branch", "LYON", "TP-1", "Acme SA", "ACME",
-      "BDR-G-001", "Acme SA", "ACME", "123456789", "12345678900012", List.of());
+  // ── Harness ───────────────────────────────────────────────────────────────
 
-  // ── Stubs ─────────────────────────────────────────────────────────────────
-
-  private static PartyRegistrationLookup lookupStub() {
-    return new PartyRegistrationLookup() {
-      public Optional<PartyRegistrationDetails> findByBdrId(String b) { return Optional.of(ACME); }
-      public Optional<PartyRegistrationDetails> findBySiren(String s) { return Optional.of(ACME); }
-      public Optional<PartyRegistrationDetails> findBySiret(String s) { return Optional.of(ACME); }
-      public List<PartyRegistrationDetails> findAllBySiret(String s) { return List.of(ACME); }
-    };
-  }
-
-  /** Referential covering the fee types the rules key on. */
-  private static FeeTypeMatcher matcherStub() {
-    Map<String, String> referential = Map.of(
-        "F01", "CUSTODY",
-        "F02", "EXCHANGE",
-        "F03", "CLEARING",
-        "F04", "BROKERAGE_PRINCIPAL",
-        "F05", "BROKERAGE_AGENCY");
-    return new FeeTypeMatcher(() -> referential);
-  }
-
-  /** Records what was persisted so assertions can inspect it. */
-  private static final class RecordingStore implements InvoicePayableStore {
-    final AtomicReference<PersistRequest> last = new AtomicReference<>();
-    @Override public long persist(PersistRequest request) {
-      last.set(request);
-      return 42L;
-    }
-  }
-
-  private static final class RecordingPublisher implements LifecycleEventPublisher {
-    final List<PendingLifecycleEvent> events = new ArrayList<>();
-    @Override public void publish(PendingLifecycleEvent e) { events.add(e); }
-  }
-
-  private static final class RecordingNotifier implements RegistrationAlertNotifier {
-    final List<RegistrationAlert> alerts = new ArrayList<>();
-    @Override public void notify(RegistrationAlert a) { alerts.add(a); }
-  }
+  private record Harness(
+      InvoiceRegistrationService service,
+      Stubs.RecordingStore store,
+      Stubs.RecordingPublisher publisher,
+      Stubs.RecordingNotifier notifier) {}
 
   /** Full MARK rule set, matching the shipped application.yml. */
   private static ValidationRegistry markRules(boolean duplicateExists) {
@@ -102,197 +57,516 @@ class InvoiceRegistrationServiceTest {
         .build();
   }
 
-  private record Harness(
-      InvoiceRegistrationService service,
-      RecordingStore store,
-      RecordingPublisher publisher,
-      RecordingNotifier notifier) {}
-
   private static Harness harness(ValidationRegistry rules) {
-    RecordingStore store = new RecordingStore();
-    RecordingPublisher publisher = new RecordingPublisher();
-    RecordingNotifier notifier = new RecordingNotifier();
+    return harness(rules, new EInvoiceFacadeMapper(Stubs.lookup()), Stubs.matcher(),
+        new Stubs.RecordingPublisher(), new Stubs.RecordingNotifier());
+  }
+
+  private static Harness harness(ValidationRegistry rules, EInvoiceFacadeMapper mapper,
+                                 FeeTypeMatcher matcher,
+                                 LifecycleEventPublisher publisher,
+                                 RegistrationAlertNotifier notifier) {
+    Stubs.RecordingStore store = new Stubs.RecordingStore();
     InvoiceRegistrationService svc = new InvoiceRegistrationService(
-        new EInvoiceFacadeMapper(lookupStub()),
-        matcherStub(),
-        new MultipartExtractionService(),
-        rules, store, publisher, notifier);
-    return new Harness(svc, store, publisher, notifier);
-  }
-
-  /** Minimal but structurally valid e-invoice with the given receiver endpoint marker. */
-  private static Invoice invoiceWithMarker(String marker) {
-    Invoice inv = new Invoice();
-    inv.setId("INV-0001");
-
-    SchemeID endpoint = new SchemeID();
-    endpoint.setValue(marker);
-    endpoint.setSchemeID("0225");
-
-    Party customerParty = new Party();
-    customerParty.setEndpointId(endpoint);
-    PartyLegalEntity ple = new PartyLegalEntity();
-    SchemeID companyId = new SchemeID();
-    companyId.setValue("123456789");
-    ple.setCompanyId(companyId);
-    customerParty.setPartyLegalEntity(ple);
-    AccountingCustomerParty customer = new AccountingCustomerParty();
-    customer.setParty(customerParty);
-    inv.setAccountingCustomerParty(customer);
-
-    Party supplierParty = new Party();
-    PartyLegalEntity sple = new PartyLegalEntity();
-    SchemeID sCompanyId = new SchemeID();
-    sCompanyId.setValue("987654321");
-    sple.setCompanyId(sCompanyId);
-    supplierParty.setPartyLegalEntity(sple);
-    AccountingSupplierParty supplier = new AccountingSupplierParty();
-    supplier.setParty(supplierParty);
-    inv.setAccountingSupplierParty(supplier);
-
-    CodedValue currency = new CodedValue();
-    currency.setValue("EUR");
-    inv.setDocumentCurrencyCode(currency);
-    return inv;
-  }
-
-  private static ExtractedAttachment pdf() {
-    return new ExtractedAttachment("invoice.pdf", new byte[] {0x25, 0x50, 0x44, 0x46, 1, 2},
-        "application/pdf");
-  }
-
-  private static ExtractedAttachment tradeCsv() {
-    return new ExtractedAttachment("trades.csv", "a,b,c\n1,2,3\n".getBytes(), "text/csv");
-  }
-
-  // ── Tests ─────────────────────────────────────────────────────────────────
-
-  @Test
-  @DisplayName("rule 1: a duplicate provider reference is CANCELLED + REFUSED(DOUBLON)")
-  void duplicateInvoiceIsRefused() {
-    Harness h = harness(markRules(/*duplicateExists*/ true));
-    // CUSTODY with an attachment: only the duplicate rule should fire.
-    RegistrationOutcome outcome = h.service()
-        .register(invoiceWithMarker("552120222_MARK_CUSTODY"), List.of(pdf()));
-
-    assertEquals(RegistrationOutcome.Status.CANCELLED, outcome.status());
-    assertEquals(LifecycleEventType.REFUSED, outcome.lifecycleEvent());
-    assertEquals("DOUBLON", outcome.lifecycleReasonCode());
-    assertTrue(outcome.comment().contains("invoice already exists"));
-
-    assertEquals(1, h.publisher().events.size(), "a refusal must queue a lifecycle event");
-    assertEquals(42L, h.publisher().events.get(0).invoicePayableId());
-    assertEquals(1, h.notifier().alerts.size(), "one comprehensive alert per failed invoice");
-  }
-
-  @Test
-  @DisplayName("rule 2: no attachment anywhere is CANCELLED + SUSPENDED(JUSTIF_ABS)")
-  void missingAttachmentIsSuspended() {
-    Harness h = harness(markRules(false));
-    RegistrationOutcome outcome = h.service()
-        .register(invoiceWithMarker("552120222_MARK_CUSTODY"), List.of());
-
-    assertTrue(hasCode(outcome, ErrorCode.MISSING_ATTACHMENT));
-    assertEquals(RegistrationOutcome.Status.CANCELLED, outcome.status());
-    assertEquals(LifecycleEventType.SUSPENDED, outcome.lifecycleEvent());
-    assertEquals("JUSTIF_ABS", outcome.lifecycleReasonCode());
-    assertEquals(1, h.publisher().events.size());
-  }
-
-  @Test
-  @DisplayName("rule 3: BROKERAGE_PRINCIPAL without a .csv/.xlsx trade file is SUSPENDED")
-  void brokerageWithoutTradeFileIsSuspended() {
-    Harness h = harness(markRules(false));
-    // A PDF is present, so rule 2 passes; the trade-file rule is what fires.
-    RegistrationOutcome outcome = h.service()
-        .register(invoiceWithMarker("552120222_MARK_BROKERAGE_PRINCIPAL"), List.of(pdf()));
-
-    assertTrue(hasCode(outcome, ErrorCode.MISSING_TRADE_FILE));
-    assertEquals(LifecycleEventType.SUSPENDED, outcome.lifecycleEvent());
-  }
-
-  @Test
-  @DisplayName("rule 3 passes when a trade file IS supplied")
-  void brokerageWithTradeFilePasses() {
-    Harness h = harness(markRules(false));
-    RegistrationOutcome outcome = h.service()
-        .register(invoiceWithMarker("552120222_MARK_BROKERAGE_PRINCIPAL"),
-            List.of(pdf(), tradeCsv()));
-
-    assertTrue(!hasCode(outcome, ErrorCode.MISSING_TRADE_FILE),
-        "a .csv trade file satisfies the brokerage requirement");
-  }
-
-  @Test
-  @DisplayName("rule 4: CUSTODY with no line items → INCOMPLETE, alert but NO lifecycle event")
-  void noLineItemsIsIncompleteAndAlertOnly() {
-    Harness h = harness(markRules(false));
-    RegistrationOutcome outcome = h.service()
-        .register(invoiceWithMarker("552120222_MARK_CUSTODY"), List.of(pdf()));
-
-    assertTrue(hasCode(outcome, ErrorCode.EMPTY_LINE_ITEMS));
-    assertEquals(RegistrationOutcome.Status.INCOMPLETE, outcome.status(),
-        "users add the missing lines later — CANCELLED would block that path");
-    assertNull(outcome.lifecycleEvent());
-    assertEquals(0, h.publisher().events.size(), "INCOMPLETE queues no lifecycle event");
-    assertEquals(1, h.notifier().alerts.size(), "but ops is still told");
-  }
-
-  @Test
-  @DisplayName("unknown business → BUSINESS_UNKNOWN, and no rules run for it")
-  void unknownBusinessIsCaptured() {
-    Harness h = harness(markRules(false));
-    RegistrationOutcome outcome = h.service()
-        .register(invoiceWithMarker("552120222_NOPE_CUSTODY"), List.of());
-
-    assertTrue(hasCode(outcome, ErrorCode.BUSINESS_UNKNOWN));
-    assertEquals(LifecycleEventType.REFUSED, outcome.lifecycleEvent());
-    // MARK's rules must NOT have run — no attachment was supplied, yet MISSING_ATTACHMENT
-    // should be absent because the business never resolved.
-    assertTrue(!hasCode(outcome, ErrorCode.MISSING_ATTACHMENT),
-        "rules are scoped per business; an unresolved business runs none of them");
-  }
-
-  @Test
-  @DisplayName("unresolvable fee type is captured as FEETYPE_UNRESOLVED")
-  void unresolvableFeeTypeIsCaptured() {
-    Harness h = harness(markRules(false));
-    // A bare BROKERAGE ties against BROKERAGE_PRINCIPAL and BROKERAGE_AGENCY → ambiguous.
-    RegistrationOutcome outcome = h.service()
-        .register(invoiceWithMarker("552120222_MARK_BROKERAGE"), List.of(pdf()));
-
-    assertTrue(hasCode(outcome, ErrorCode.FEETYPE_UNRESOLVED),
-        "the matcher refuses to guess between two equally-scoring entries");
-    assertEquals(LifecycleEventType.REFUSED, outcome.lifecycleEvent());
-  }
-
-  @Test
-  @DisplayName("resolved fee type is seeded onto the persisted row")
-  void resolvedFeeTypeReachesPersistence() {
-    Harness h = harness(markRules(false));
-    h.service().register(invoiceWithMarker("552120222_MARK_CUSTODY"), List.of(pdf()));
-
-    InvoicePayableStore.PersistRequest req = h.store().last.get();
-    assertNotNull(req);
-    assertEquals("F01", req.feeId(), "the referential id must land on the row");
-    assertEquals("CUSTODY", req.feeType());
-    assertEquals(Business.MARK, req.business());
-    assertEquals("EINVOICE", req.source(), "this pipeline is e-invoice only");
-  }
-
-  @Test
-  @DisplayName("a row is always persisted, even for a total failure")
-  void rowIsAlwaysPersisted() {
-    Harness h = harness(markRules(true));
-    h.service().register(invoiceWithMarker("garbage-with-no-underscores"), List.of());
-    assertNotNull(h.store().last.get(),
-        "a failed registration is a data point, not a discard");
+        mapper, matcher, new MultipartExtractionService(), rules, store, publisher, notifier);
+    return new Harness(svc, store,
+        publisher instanceof Stubs.RecordingPublisher rp ? rp : new Stubs.RecordingPublisher(),
+        notifier instanceof Stubs.RecordingNotifier rn ? rn : new Stubs.RecordingNotifier());
   }
 
   private static boolean hasCode(RegistrationOutcome outcome, ErrorCode code) {
-    for (MappingError e : outcome.errors()) {
-      if (e.code() == code) return true;
+    return outcome.errors().stream().anyMatch(e -> e.code() == code);
+  }
+
+  private static MappingError find(RegistrationOutcome outcome, ErrorCode code) {
+    return outcome.errors().stream().filter(e -> e.code() == code).findFirst().orElseThrow();
+  }
+
+  // ── Happy path ────────────────────────────────────────────────────────────
+
+  @Nested
+  @DisplayName("clean registration")
+  class HappyPath {
+
+    @Test
+    @DisplayName("custody invoice with lines and an attachment registers with no errors")
+    void registersCleanly() {
+      Harness h = harness(markRules(false));
+      Invoice inv = Fixtures.loadInvoice("custody-with-lines.json");
+
+      RegistrationOutcome outcome = h.service().register(inv, List.of());
+
+      assertEquals(RegistrationOutcome.Status.REGISTERED, outcome.status());
+      assertNull(outcome.lifecycleEvent());
+      assertNull(outcome.comment());
+      assertFalse(outcome.hasErrors());
+      assertTrue(outcome.isRegistered());
+      assertEquals(0, h.publisher().events.size(), "a clean run queues no lifecycle event");
+      assertEquals(0, h.notifier().alerts.size(), "a clean run raises no alert");
     }
-    return false;
+
+    @Test
+    @DisplayName("the JSON-embedded PDF satisfies the attachment rule without a multipart file")
+    void embeddedAttachmentCounts() {
+      Harness h = harness(markRules(false));
+      RegistrationOutcome outcome = h.service()
+          .register(Fixtures.loadInvoice("custody-with-lines.json"), List.of());
+      assertFalse(hasCode(outcome, ErrorCode.MISSING_ATTACHMENT));
+    }
+
+    @Test
+    @DisplayName("resolved fee identity and business reach the persisted row")
+    void feeIdentityReachesPersistence() {
+      Harness h = harness(markRules(false));
+      h.service().register(Fixtures.loadInvoice("custody-with-lines.json"), List.of());
+
+      InvoicePayableStore.PersistRequest req = h.store().last.get();
+      assertNotNull(req);
+      assertEquals("F01", req.feeId(), "the referential id must land on the row");
+      assertEquals("CUSTODY", req.feeType());
+      assertEquals(Business.MARK, req.business());
+      assertEquals("EINVOICE", req.source(), "this pipeline is e-invoice only");
+      assertNotNull(req.model());
+      assertEquals("CUS0226368", req.model().getInvoiceReference());
+    }
+
+    @Test
+    @DisplayName("fee category is copied onto the payable model, not just the row")
+    void feeCategorySeededOntoModel() {
+      Harness h = harness(markRules(false));
+      h.service().register(Fixtures.loadInvoice("custody-with-lines.json"), List.of());
+
+      InvoicePayableStore.PersistRequest req = h.store().last.get();
+      assertEquals("CUSTODY", req.model().getFeeCategory());
+      assertEquals("F01", req.model().getInvoicePayable().getFeeCategoryCode());
+    }
+  }
+
+  // ── Spec rules ────────────────────────────────────────────────────────────
+
+  @Nested
+  @DisplayName("spec rule 1 — duplicate invoice")
+  class DuplicateRule {
+
+    @Test
+    @DisplayName("a duplicate provider reference is CANCELLED + REFUSED(DOUBLON)")
+    void duplicateIsRefused() {
+      Harness h = harness(markRules(true));
+      RegistrationOutcome outcome = h.service()
+          .register(Fixtures.loadInvoice("custody-with-lines.json"), List.of());
+
+      assertEquals(RegistrationOutcome.Status.CANCELLED, outcome.status());
+      assertEquals(LifecycleEventType.REFUSED, outcome.lifecycleEvent());
+      assertEquals("DOUBLON", outcome.lifecycleReasonCode());
+      assertTrue(outcome.comment().contains("invoice already exists"),
+          "the spec dictates this exact comment on the row");
+    }
+
+    @Test
+    @DisplayName("a refusal queues exactly one lifecycle event carrying the row id")
+    void refusalQueuesLifecycleEvent() {
+      Harness h = harness(markRules(true));
+      h.service().register(Fixtures.loadInvoice("custody-with-lines.json"), List.of());
+
+      assertEquals(1, h.publisher().events.size());
+      LifecycleEventPublisher.PendingLifecycleEvent e = h.publisher().events.get(0);
+      assertEquals(Stubs.RecordingStore.ROW_ID, e.invoicePayableId());
+      assertEquals(LifecycleEventType.REFUSED, e.type());
+      assertEquals("DOUBLON", e.reasonCode());
+      assertEquals(210, e.type().cdarCode());
+      assertEquals("CUS0226368", e.invoiceReference());
+    }
+
+    @Test
+    @DisplayName("exactly one alert per failed invoice, carrying every error")
+    void oneAlertPerFailedInvoice() {
+      Harness h = harness(markRules(true));
+      RegistrationOutcome outcome = h.service()
+          .register(Fixtures.loadInvoice("custody-with-lines.json"), List.of());
+
+      assertEquals(1, h.notifier().alerts.size());
+      RegistrationAlertNotifier.RegistrationAlert alert = h.notifier().alerts.get(0);
+      assertEquals(outcome.errors().size(), alert.errors().size());
+      assertEquals(Business.MARK, alert.business());
+      assertEquals(Stubs.RecordingStore.ROW_ID, alert.invoicePayableId());
+    }
+  }
+
+  @Nested
+  @DisplayName("spec rule 2 — attachment presence")
+  class AttachmentRule {
+
+    @Test
+    @DisplayName("no attachment in either channel is CANCELLED + SUSPENDED(JUSTIF_ABS)")
+    void missingAttachmentIsSuspended() {
+      Harness h = harness(markRules(false));
+      RegistrationOutcome outcome = h.service()
+          .register(Fixtures.loadInvoice("no-attachment.json"), List.of());
+
+      assertTrue(hasCode(outcome, ErrorCode.MISSING_ATTACHMENT));
+      assertEquals(RegistrationOutcome.Status.CANCELLED, outcome.status());
+      assertEquals(LifecycleEventType.SUSPENDED, outcome.lifecycleEvent());
+      assertEquals("JUSTIF_ABS", outcome.lifecycleReasonCode());
+      assertEquals(208, outcome.lifecycleEvent().cdarCode());
+    }
+
+    @Test
+    @DisplayName("a multipart file alone satisfies the rule when the JSON body has none")
+    void multipartAloneSatisfiesTheRule() {
+      Harness h = harness(markRules(false));
+      RegistrationOutcome outcome = h.service()
+          .register(Fixtures.loadInvoice("no-attachment.json"),
+              List.of(Fixtures.pdf("supplied-separately.pdf")));
+
+      assertFalse(hasCode(outcome, ErrorCode.MISSING_ATTACHMENT),
+          "the rule asks whether an attachment exists at all, not which channel carried it");
+    }
+
+    @Test
+    @DisplayName("a corrupt attachment is dropped upstream and reads as absent")
+    void corruptAttachmentReadsAsAbsent() {
+      Harness h = harness(markRules(false));
+      RegistrationOutcome outcome = h.service()
+          .register(Fixtures.loadInvoice("corrupt-attachment.json"), List.of());
+
+      assertTrue(hasCode(outcome, ErrorCode.MISSING_ATTACHMENT),
+          "MultipartExtractionService drops the file on the magic-byte check, so the "
+              + "pipeline sees zero attachments — which is why no rule needs its own "
+              + "corruption check");
+    }
+  }
+
+  @Nested
+  @DisplayName("spec rule 3 — brokerage trade file")
+  class TradeFileRule {
+
+    @Test
+    @DisplayName("BROKERAGE_PRINCIPAL without a trade file is SUSPENDED")
+    void brokerageWithoutTradeFileIsSuspended() {
+      Harness h = harness(markRules(false));
+      RegistrationOutcome outcome = h.service()
+          .register(Fixtures.loadInvoice("brokerage-principal.json"), List.of());
+
+      assertTrue(hasCode(outcome, ErrorCode.MISSING_TRADE_FILE));
+      assertEquals(LifecycleEventType.SUSPENDED, outcome.lifecycleEvent());
+    }
+
+    @Test
+    @DisplayName("a .csv trade file satisfies the rule")
+    void csvSatisfies() {
+      Harness h = harness(markRules(false));
+      RegistrationOutcome outcome = h.service()
+          .register(Fixtures.loadInvoice("brokerage-principal.json"),
+              List.of(Fixtures.tradeCsv("trades.csv")));
+      assertFalse(hasCode(outcome, ErrorCode.MISSING_TRADE_FILE));
+    }
+
+    @Test
+    @DisplayName("an .xlsx trade file satisfies the rule")
+    void xlsxSatisfies() {
+      Harness h = harness(markRules(false));
+      RegistrationOutcome outcome = h.service()
+          .register(Fixtures.loadInvoice("brokerage-principal.json"),
+              List.of(Fixtures.tradeXlsx("trades.xlsx")));
+      assertFalse(hasCode(outcome, ErrorCode.MISSING_TRADE_FILE));
+    }
+
+    @Test
+    @DisplayName("the underscore inside BROKERAGE_PRINCIPAL survives marker parsing")
+    void feeTypeTailWithUnderscoreResolves() {
+      Harness h = harness(markRules(false));
+      h.service().register(Fixtures.loadInvoice("brokerage-principal.json"),
+          List.of(Fixtures.tradeCsv("trades.csv")));
+
+      assertEquals("F04", h.store().last.get().feeId(),
+          "only the first two underscores are separators — the tail must stay intact");
+    }
+  }
+
+  @Nested
+  @DisplayName("spec rule 4 — line items")
+  class LineItemRule {
+
+    @Test
+    @DisplayName("CUSTODY with no lines → INCOMPLETE, alert but NO lifecycle event")
+    void noLinesIsIncompleteAndAlertOnly() {
+      Harness h = harness(markRules(false));
+      RegistrationOutcome outcome = h.service()
+          .register(Fixtures.loadInvoice("custody-no-lines.json"), List.of());
+
+      assertTrue(hasCode(outcome, ErrorCode.EMPTY_LINE_ITEMS));
+      assertEquals(RegistrationOutcome.Status.INCOMPLETE, outcome.status(),
+          "users add the missing lines later — CANCELLED would block that path");
+      assertNull(outcome.lifecycleEvent());
+      assertEquals(0, h.publisher().events.size(), "INCOMPLETE queues no lifecycle event");
+      assertEquals(1, h.notifier().alerts.size(), "but ops is still told the row is sitting there");
+    }
+  }
+
+  // ── Marker + fee-type failures ────────────────────────────────────────────
+
+  @Nested
+  @DisplayName("marker and fee-type resolution")
+  class MarkerFailures {
+
+    @Test
+    @DisplayName("unknown business is captured and no rules run for it")
+    void unknownBusinessRunsNoRules() {
+      Harness h = harness(markRules(false));
+      RegistrationOutcome outcome = h.service()
+          .register(Fixtures.loadInvoice("unknown-business.json"), List.of());
+
+      assertTrue(hasCode(outcome, ErrorCode.BUSINESS_UNKNOWN));
+      assertEquals(LifecycleEventType.REFUSED, outcome.lifecycleEvent());
+      assertFalse(hasCode(outcome, ErrorCode.MISSING_ATTACHMENT),
+          "rules are scoped per business; an unresolved business runs none of them, even "
+              + "though this fixture would otherwise trip the attachment rule");
+    }
+
+    @Test
+    @DisplayName("an ambiguous fee type refuses rather than guessing")
+    void ambiguousFeeTypeIsRefused() {
+      Harness h = harness(markRules(false));
+      RegistrationOutcome outcome = h.service()
+          .register(Fixtures.loadInvoice("ambiguous-feetype.json"), List.of());
+
+      assertTrue(hasCode(outcome, ErrorCode.FEETYPE_UNRESOLVED));
+      assertEquals(LifecycleEventType.REFUSED, outcome.lifecycleEvent());
+      assertTrue(find(outcome, ErrorCode.FEETYPE_UNRESOLVED).detail().contains("Ambiguous"),
+          "the failure detail should say WHY, so ops can fix the referential or the marker");
+    }
+
+    @Test
+    @DisplayName("the raw marker fee type is persisted when the matcher could not resolve it")
+    void rawFeeTypePersistedOnFailure() {
+      Harness h = harness(markRules(false));
+      h.service().register(Fixtures.loadInvoice("ambiguous-feetype.json"), List.of());
+
+      assertNull(h.store().last.get().feeId(), "no referential id was resolved");
+      assertEquals("BROKERAGE", h.store().last.get().feeType(),
+          "the raw token is kept so ops can see what arrived");
+    }
+
+    @Test
+    @DisplayName("a blank endpoint value yields MARKER_MALFORMED, not a crash")
+    void blankEndpointIsMalformed() {
+      Harness h = harness(markRules(false));
+      Invoice inv = Fixtures.loadInvoice("custody-with-lines.json");
+      inv.getAccountingCustomerParty().getParty().getEndpointId().setValue("   ");
+
+      RegistrationOutcome outcome = h.service().register(inv, List.of());
+      assertTrue(hasCode(outcome, ErrorCode.MARKER_MALFORMED));
+    }
+
+    @Test
+    @DisplayName("an absent endpoint element yields MARKER_MALFORMED")
+    void absentEndpointIsMalformed() {
+      Harness h = harness(markRules(false));
+      Invoice inv = Fixtures.loadInvoice("custody-with-lines.json");
+      inv.getAccountingCustomerParty().getParty().setEndpointId(null);
+
+      RegistrationOutcome outcome = h.service().register(inv, List.of());
+      assertTrue(hasCode(outcome, ErrorCode.MARKER_MALFORMED));
+    }
+
+    @Test
+    @DisplayName("an absent customer party yields MARKER_MALFORMED")
+    void absentCustomerPartyIsMalformed() {
+      Harness h = harness(markRules(false));
+      Invoice inv = Fixtures.loadInvoice("custody-with-lines.json");
+      inv.setAccountingCustomerParty(null);
+
+      RegistrationOutcome outcome = h.service().register(inv, List.of());
+      assertTrue(hasCode(outcome, ErrorCode.MARKER_MALFORMED));
+    }
+
+    @Test
+    @DisplayName("a marker with no fee-type tail yields MARKER_MALFORMED")
+    void missingFeeTypeTailIsMalformed() {
+      Harness h = harness(markRules(false));
+      Invoice inv = Fixtures.loadInvoice("custody-with-lines.json");
+      inv.getAccountingCustomerParty().getParty().getEndpointId().setValue("552120222_MARK");
+
+      RegistrationOutcome outcome = h.service().register(inv, List.of());
+      assertTrue(hasCode(outcome, ErrorCode.MARKER_MALFORMED));
+    }
+
+    @Test
+    @DisplayName("a fee-type referential that blows up is captured, not propagated")
+    void feeTypeProviderFailureIsCaptured() {
+      FeeTypeMatcher exploding = new FeeTypeMatcher(() -> {
+        throw new IllegalStateException("referential DB unreachable");
+      });
+      Harness h = harness(markRules(false), new EInvoiceFacadeMapper(Stubs.lookup()),
+          exploding, new Stubs.RecordingPublisher(), new Stubs.RecordingNotifier());
+
+      RegistrationOutcome outcome = h.service()
+          .register(Fixtures.loadInvoice("custody-with-lines.json"), List.of());
+
+      assertTrue(hasCode(outcome, ErrorCode.FEETYPE_UNRESOLVED));
+      assertTrue(find(outcome, ErrorCode.FEETYPE_UNRESOLVED).detail()
+          .contains("referential DB unreachable"));
+      assertNotNull(find(outcome, ErrorCode.FEETYPE_UNRESOLVED).cause(),
+          "the original exception must ride along for the alert's stack trace");
+    }
+  }
+
+  // ── Failure isolation ─────────────────────────────────────────────────────
+
+  @Nested
+  @DisplayName("failures in one step never break the pipeline")
+  class FailureIsolation {
+
+    @Test
+    @DisplayName("a party-lookup failure becomes PARTY_LOOKUP_FAILED and still persists a row")
+    void partyLookupFailureIsCaptured() {
+      EInvoiceFacadeMapper mapper = new EInvoiceFacadeMapper(
+          Stubs.throwingLookup(new PartyRegistrationUnavailableException(
+              UnavailabilityReason.UPSTREAM_UNAVAILABLE, "SIREN", "552120222",
+              "referential timed out")));
+      Harness h = harness(markRules(false), mapper, Stubs.matcher(),
+          new Stubs.RecordingPublisher(), new Stubs.RecordingNotifier());
+
+      RegistrationOutcome outcome = h.service()
+          .register(Fixtures.loadInvoice("custody-with-lines.json"), List.of());
+
+      assertTrue(hasCode(outcome, ErrorCode.PARTY_LOOKUP_FAILED));
+      assertEquals(LifecycleEventType.SUSPENDED, outcome.lifecycleEvent());
+      assertEquals("SIRET_ERR", outcome.lifecycleReasonCode());
+      assertEquals(1, h.store().calls, "the row is written even when mapping failed");
+      assertNull(h.store().last.get().model(), "…with a null payload, which is the honest record");
+    }
+
+    @Test
+    @DisplayName("an unexpected mapper exception becomes MAPPING_ERROR")
+    void unexpectedMapperExceptionIsCaptured() {
+      EInvoiceFacadeMapper mapper = new EInvoiceFacadeMapper(
+          Stubs.throwingLookup(new IllegalStateException("boom")));
+      Harness h = harness(markRules(false), mapper, Stubs.matcher(),
+          new Stubs.RecordingPublisher(), new Stubs.RecordingNotifier());
+
+      RegistrationOutcome outcome = h.service()
+          .register(Fixtures.loadInvoice("custody-with-lines.json"), List.of());
+
+      assertTrue(hasCode(outcome, ErrorCode.MAPPING_ERROR));
+      assertEquals(LifecycleEventType.REFUSED, outcome.lifecycleEvent());
+    }
+
+    @Test
+    @DisplayName("a rule that throws is contained and reported, not propagated")
+    void throwingRuleIsContained() {
+      ValidationRegistry rules = ValidationRegistry.builder()
+          .add(Business.MARK, ctx -> { throw new IllegalStateException("rule bug"); })
+          .build();
+      Harness h = harness(rules);
+
+      RegistrationOutcome outcome = h.service()
+          .register(Fixtures.loadInvoice("custody-with-lines.json"), List.of());
+
+      assertTrue(hasCode(outcome, ErrorCode.MAPPING_ERROR));
+      assertTrue(find(outcome, ErrorCode.MAPPING_ERROR).detail().contains("threw unexpectedly"));
+    }
+
+    @Test
+    @DisplayName("a rule returning null is treated as a pass")
+    void nullReturningRuleIsAPass() {
+      ValidationRegistry rules = ValidationRegistry.builder()
+          .add(Business.MARK, ctx -> null)
+          .build();
+      Harness h = harness(rules);
+
+      RegistrationOutcome outcome = h.service()
+          .register(Fixtures.loadInvoice("custody-with-lines.json"), List.of());
+      assertTrue(outcome.isRegistered());
+    }
+
+    @Test
+    @DisplayName("a lifecycle publisher failure is recorded but does not unwind the row")
+    void publisherFailureIsRecorded() {
+      Harness h = harness(markRules(true), new EInvoiceFacadeMapper(Stubs.lookup()),
+          Stubs.matcher(), new Stubs.ThrowingPublisher(), new Stubs.RecordingNotifier());
+
+      RegistrationOutcome outcome = h.service()
+          .register(Fixtures.loadInvoice("custody-with-lines.json"), List.of());
+
+      assertEquals(RegistrationOutcome.Status.CANCELLED, outcome.status(),
+          "the outcome was already decided before the publisher was called");
+      assertEquals(1, h.store().calls, "the row is durable regardless");
+    }
+
+    @Test
+    @DisplayName("an alert notifier failure never fails the registration")
+    void notifierFailureIsSwallowed() {
+      Harness h = harness(markRules(true), new EInvoiceFacadeMapper(Stubs.lookup()),
+          Stubs.matcher(), new Stubs.RecordingPublisher(), new Stubs.ThrowingNotifier());
+
+      RegistrationOutcome outcome = h.service()
+          .register(Fixtures.loadInvoice("custody-with-lines.json"), List.of());
+
+      assertEquals(RegistrationOutcome.Status.CANCELLED, outcome.status(),
+          "SMTP being down must not turn a stored CANCELLED row into a caller-facing failure");
+    }
+
+    @Test
+    @DisplayName("a row is persisted even for a totally malformed invoice")
+    void rowIsAlwaysPersisted() {
+      Harness h = harness(markRules(false));
+      Invoice inv = Fixtures.loadInvoice("custody-with-lines.json");
+      inv.getAccountingCustomerParty().getParty().getEndpointId().setValue("no-underscores-here");
+
+      h.service().register(inv, List.of());
+      assertNotNull(h.store().last.get(),
+          "a failed registration is a data point, not a discard");
+    }
+  }
+
+  // ── Contract guards ───────────────────────────────────────────────────────
+
+  @Nested
+  @DisplayName("constructor and argument contracts")
+  class Contracts {
+
+    @Test
+    @DisplayName("a null e-invoice is rejected outright")
+    void nullInvoiceRejected() {
+      Harness h = harness(markRules(false));
+      assertThrows(NullPointerException.class, () -> h.service().register(null, List.of()));
+    }
+
+    @Test
+    @DisplayName("null multipart list is treated as empty, not a crash")
+    void nullAttachmentsTreatedAsEmpty() {
+      Harness h = harness(markRules(false));
+      RegistrationOutcome outcome =
+          h.service().register(Fixtures.loadInvoice("custody-with-lines.json"), null);
+      assertTrue(outcome.isRegistered());
+    }
+
+    @Test
+    @DisplayName("every collaborator is mandatory")
+    void collaboratorsAreMandatory() {
+      EInvoiceFacadeMapper mapper = new EInvoiceFacadeMapper(Stubs.lookup());
+      FeeTypeMatcher matcher = Stubs.matcher();
+      MultipartExtractionService extractor = new MultipartExtractionService();
+      ValidationRegistry rules = markRules(false);
+      Stubs.RecordingStore store = new Stubs.RecordingStore();
+      Stubs.RecordingPublisher pub = new Stubs.RecordingPublisher();
+      Stubs.RecordingNotifier notif = new Stubs.RecordingNotifier();
+
+      assertThrows(NullPointerException.class, () -> new InvoiceRegistrationService(
+          null, matcher, extractor, rules, store, pub, notif));
+      assertThrows(NullPointerException.class, () -> new InvoiceRegistrationService(
+          mapper, null, extractor, rules, store, pub, notif));
+      assertThrows(NullPointerException.class, () -> new InvoiceRegistrationService(
+          mapper, matcher, null, rules, store, pub, notif));
+      assertThrows(NullPointerException.class, () -> new InvoiceRegistrationService(
+          mapper, matcher, extractor, null, store, pub, notif));
+      assertThrows(NullPointerException.class, () -> new InvoiceRegistrationService(
+          mapper, matcher, extractor, rules, null, pub, notif));
+      assertThrows(NullPointerException.class, () -> new InvoiceRegistrationService(
+          mapper, matcher, extractor, rules, store, null, notif));
+      assertThrows(NullPointerException.class, () -> new InvoiceRegistrationService(
+          mapper, matcher, extractor, rules, store, pub, null));
+    }
   }
 }
