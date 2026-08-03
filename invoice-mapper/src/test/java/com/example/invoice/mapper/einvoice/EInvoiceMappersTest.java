@@ -478,8 +478,11 @@ class EInvoiceMappersTest {
       assertEquals("INV-1", items.get(0).getInvReferenceSg());
       assertEquals(new BigDecimal("50.00"), items.get(0).getFeeAmount());
       assertEquals("EUR", items.get(0).getFeeCurrency());
-      assertEquals("CUSTODY FEE", items.get(0).getItemDescription());
-      assertEquals("CUSTODY FEE", items.get(0).getFeeType());
+      assertEquals("CUSTODY FEE", items.get(0).getItemDescription(),
+          "the line's Item.name is the supplier's free text, so it lands on the description");
+      assertNull(items.get(0).getFeeType(),
+          "and nowhere else — feeType is a taxonomy value owned by the fee referential, not "
+              + "whatever the sender happened to type");
       assertEquals(new BigDecimal("2"), items.get(0).getNotionQuantity());
     }
 

@@ -224,7 +224,9 @@ class EInvoiceFacadeMapperTest {
       MappedResult result = mapper().toInvoicePayable(einvoice());
       InvoicePayableModel m = result.model();
 
-      assertEquals("CUS0226368", m.getInvoiceReference());
+      assertNull(m.getInvoiceReference(),
+          "the reference is minted from seq_invoice_reference at persist time — the e-invoice's "
+              + "own id is unique only within the supplier that issued it");
       assertEquals(LocalDate.of(2026, 4, 14), m.getInvoiceDate());
       assertEquals("DEBIT", m.getInvoiceType());
       assertEquals("REGISTERED", m.getInvoiceStatus());
@@ -239,7 +241,8 @@ class EInvoiceFacadeMapperTest {
       assertEquals(new BigDecimal("125.31"), p.getVatAmount());
       assertEquals(new BigDecimal("20.00"), p.getVatRate());
       assertEquals("EINV", p.getFeeCategoryCode());
-      assertEquals("CUS0226368", p.getProviderReference());
+      assertEquals("CUS0226368", p.getProviderReference(),
+          "the e-invoice id lands here, which is what the duplicate check keys on");
     }
 
     @Test
@@ -344,7 +347,8 @@ class EInvoiceFacadeMapperTest {
       inv.setAccountingCustomerParty(null);
 
       InvoicePayableModel m = mapper().toInvoicePayable(inv).model();
-      assertEquals("CUS0226368", m.getInvoiceReference());
+      assertEquals("CUS0226368", m.getInvoicePayable().getProviderReference(),
+          "the supplier's own reference survives even with no parties to resolve");
       assertNull(m.getSgEntity());
       assertNull(m.getProviderId(),
           "with no SIREN to look up, there is nothing to fall back to either");

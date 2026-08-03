@@ -127,7 +127,11 @@ class InvoiceRegistrationServiceTest {
       assertEquals(Business.MARK, req.business());
       assertEquals("EINVOICE", req.source(), "this pipeline is e-invoice only");
       assertNotNull(req.model());
-      assertEquals("CUS0226368", req.model().getInvoiceReference());
+      assertEquals("CUS0226368", req.model().getInvoicePayable().getProviderReference(),
+          "the e-invoice id is the supplier's reference");
+      assertNull(req.model().getInvoiceReference(),
+          "invoiceReference is minted by the store from seq_invoice_reference, so it is still "
+              + "null on the request the store receives");
     }
 
     @Test

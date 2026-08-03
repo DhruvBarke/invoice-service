@@ -47,15 +47,17 @@
             <artifactId>junit-jupiter</artifactId>
         </dependency>
         <!--
-          TEST SCOPE ONLY. JdbcQuarantineStore is plain JDBC with hand-written SQL, so the only
-          test worth having runs it against a real database rather than a mocked Connection —
-          a mock would assert that we call the methods we call, which proves nothing about the
-          SQL. H2 in PostgreSQL mode runs the production DDL unmodified.
+          TEST SCOPE ONLY. JdbcQuarantineStore is plain JDBC, and this project may not pull an
+          embedded database into the build — so the JDBC surface is mocked instead. That trades
+          away one thing worth naming: these tests no longer prove the SQL parses or that the
+          schema matches. They prove the store issues the statements it claims to, binds the
+          parameters it claims to, maps a row back correctly, and translates failures. Validating
+          the SQL itself belongs to an integration environment with a real database.
         -->
         <dependency>
-            <groupId>com.h2database</groupId>
-            <artifactId>h2</artifactId>
-            <version>${h2.version}</version>
+            <groupId>org.mockito</groupId>
+            <artifactId>mockito-core</artifactId>
+            <version>${mockito.version}</version>
             <scope>test</scope>
         </dependency>
     </dependencies>
@@ -78,13 +80,11 @@
                 day someone adds one, they are what keeps the scheduler alive. Deleting them to
                 win a coverage point would trade a real safeguard for a number.
 
-              JdbcQuarantineStore (3 branches)
-                A successful INSERT ... RETURN_GENERATED_KEYS with no key returned; a row
-                absent from a SELECT ... WHERE id = ? issued inside the same transaction that
-                just updated it; and the outer SQLException arm around connection acquisition.
-                Reaching them needs a mock driver that violates the JDBC contract, which would
-                assert something about the mock rather than about our SQL. The store IS tested
-                against a real H2 running the production DDL — see JdbcQuarantineStoreTest.
+              JdbcQuarantineStore
+                Defensive arms around states a correct driver cannot produce — a successful
+                INSERT ... RETURN_GENERATED_KEYS yielding no key, a row absent from a SELECT
+                issued inside the transaction that just wrote it. See JdbcQuarantineStoreTest
+                for what the mocked JDBC surface does cover.
 
               QuarantineService (1 branch)
                 markNotified's row == null arm. Unreachable: the statement after the call

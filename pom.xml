@@ -37,7 +37,7 @@
         <junit.version>5.10.2</junit.version>
         <spring-boot.version>3.3.4</spring-boot.version>
         <jacoco.version>0.8.12</jacoco.version>
-        <h2.version>2.2.224</h2.version>
+        <mockito.version>5.14.2</mockito.version>
     </properties>
 
     <dependencyManagement>

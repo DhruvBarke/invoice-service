@@ -127,7 +127,7 @@ public final class InvoiceRegistrationService {
         mapped.model(), mapped.items(), jsonAttachments, mp), marker, errors);
 
     RegistrationOutcome outcome = RegistrationOutcome.decide(errors);
-    long rowId = persist(marker, feeMatch, mapped, outcome);
+    long rowId = persist(marker, feeMatch, mapped, jsonAttachments, mp, outcome);
 
     publishLifecycle(outcome, rowId, eInvoice, errors);
     sendAlert(outcome, rowId, eInvoice, marker);
@@ -240,9 +240,17 @@ public final class InvoiceRegistrationService {
     }
   }
 
-  /** Step 8 — the row is always written, success or failure. */
-  private long persist(EInvoiceMarker marker, FeeTypeMatch feeMatch,
-                       MappedResult mapped, RegistrationOutcome outcome) {
+  /**
+   * Step 8 — the rows are always written, success or failure.
+   *
+   * <p>Both attachment channels travel through so the documents table records which side
+   * carried each file. The store mints {@code invoiceReference} and writes it back onto the
+   * model, so the alert and the lifecycle payload quote the value the row actually has.
+   */
+  private long persist(EInvoiceMarker marker, FeeTypeMatch feeMatch, MappedResult mapped,
+                       List<ExtractedAttachment> jsonAttachments,
+                       List<ExtractedAttachment> multipartAttachments,
+                       RegistrationOutcome outcome) {
     return store.persist(new PersistRequest(
         marker.business(),
         feeMatch == null ? null : feeMatch.feeId(),
@@ -250,6 +258,8 @@ public final class InvoiceRegistrationService {
         SOURCE_EINVOICE,
         mapped.model(),
         mapped.items(),
+        jsonAttachments,
+        multipartAttachments,
         outcome));
   }
 

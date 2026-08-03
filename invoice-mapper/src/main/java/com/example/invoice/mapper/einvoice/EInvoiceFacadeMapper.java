@@ -153,7 +153,9 @@ public final class EInvoiceFacadeMapper {
     InvoicePayableModel model = new InvoicePayableModel();
     InvoicePayable payable = new InvoicePayable();
 
-    model.setInvoiceReference(inv.getId());
+    // invoiceReference is deliberately NOT set here. It is minted from seq_invoice_reference
+    // at persist time, because the e-invoice's own id is only unique within the supplier that
+    // issued it. That id is the provider reference — see below.
     model.setInvoiceDate(inv.getIssueDate());
     model.setInvoiceType(InvoiceTypeMapper.toInvoiceType(inv.getInvoiceTypeCode()));
     model.setInvoiceStatus(INVOICE_STATUS_REGISTERED);
@@ -189,6 +191,8 @@ public final class EInvoiceFacadeMapper {
     payable.setVatRate(AmountMapper.firstVatRate(inv.getTaxTotal()));
 
     payable.setFeeCategoryCode(FEE_CATEGORY_CODE);
+    // The e-invoice's id, i.e. the SUPPLIER's reference for this invoice. This is the value
+    // the duplicate check keys on, and the value quoted back to the peer in a lifecycle event.
     payable.setProviderReference(inv.getId());
 
     // Attachments: left null. MultipartExtractionService produces the raw bytes separately,

@@ -2,10 +2,20 @@ package com.example.invoice.service.alerting.quarantine;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.contains;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 import com.example.invoice.service.domain.model.PartyRegistrationDetails;
 import com.example.invoice.service.domain.port.out.QuarantineRecord;
@@ -13,311 +23,555 @@ import com.example.invoice.service.domain.port.out.QuarantineStatus;
 import com.example.invoice.service.domain.port.out.QuarantineStore;
 import com.example.invoice.service.domain.rule.AnomalyType;
 import com.example.invoice.service.domain.rule.Servability;
-import java.io.IOException;
-import java.io.UncheckedIOException;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.sql.Connection;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
 import java.sql.SQLException;
-import java.sql.Statement;
+import java.sql.Timestamp;
 import java.time.Instant;
-import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
-import java.util.concurrent.atomic.AtomicInteger;
 import javax.sql.DataSource;
-import org.h2.jdbcx.JdbcDataSource;
-import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
 /**
- * {@link JdbcQuarantineStore} against a real H2 database running the production DDL.
+ * {@link JdbcQuarantineStore} against a mocked JDBC surface.
  *
- * <p>Hand-written SQL is only as good as the schema it runs against, so this exercises the
- * statements rather than mocking a {@code Connection} — a mock would assert that the code calls
- * the methods it calls, which says nothing about whether the SQL is valid or the unique index
- * behaves as intended.
+ * <p><b>What this does and does not prove.</b> The build may not pull in an embedded database,
+ * so these tests drive mocked {@code Connection} / {@code PreparedStatement} / {@code ResultSet}
+ * objects. That covers the parts this class is actually responsible for: which statement it
+ * issues, which parameters it binds and in what order, how it maps a row back into a
+ * {@link QuarantineRecord}, whether it commits or rolls back, and how it translates a
+ * {@link SQLException}.
+ *
+ * <p>It does <em>not</em> prove the SQL parses, or that the column names match the schema. A
+ * mock answers whatever it is told to. Catching a typo in the DDL needs an integration
+ * environment with a real database, and this file is not a substitute for one.
  */
 class JdbcQuarantineStoreTest {
 
-  private static final AtomicInteger DB_SEQ = new AtomicInteger();
+  /** Unique to the row-lock SELECT. */
+  private static final String SELECT_FOR_UPDATE = "FOR UPDATE";
+  /** Unique to the UPDATE statements — the lock query never contains the table after UPDATE. */
+  private static final String UPDATE_STATEMENT = "UPDATE party_registration_quarantine";
+  /**
+   * Unique to the read-back after a write. Both update paths finish by re-reading the row, so a
+   * test that stubs only the UPDATE leaves this one returning null.
+   */
+  private static final String FIND_BY_ID = "FROM party_registration_quarantine WHERE id = ?";
 
   private DataSource dataSource;
+  private Connection connection;
   private JdbcQuarantineStore store;
 
-  /** Comma-joined names in, list back out — enough to round-trip through the CLOB columns. */
+  /** Round-trips a marker string so payload handling is observable without a real codec. */
   private static final RecordCodec CODEC = new RecordCodec() {
     @Override public String serialize(List<PartyRegistrationDetails> records) {
-      if (records == null) return null;
-      StringBuilder sb = new StringBuilder();
-      for (PartyRegistrationDetails d : records) {
-        if (sb.length() > 0) sb.append('|');
-        sb.append(d.goldenBdrId()).append(',').append(d.siren());
-      }
-      return sb.toString();
+      return records == null ? null : "serialized:" + records.size();
     }
     @Override public List<PartyRegistrationDetails> deserialize(String payload) {
-      if (payload == null || payload.isBlank()) return null;
-      List<PartyRegistrationDetails> out = new ArrayList<>();
-      for (String row : payload.split("\\|")) {
-        String[] parts = row.split(",", -1);
-        out.add(new PartyRegistrationDetails(null, null, null, null, null, null,
-            parts[0], "name", "MNE", "null".equals(parts[1]) ? null : parts[1], null, List.of()));
-      }
-      return out;
+      return (payload == null || payload.isBlank()) ? null : List.of(party());
     }
   };
 
-  @BeforeEach
-  void setUp() throws Exception {
-    JdbcDataSource ds = new JdbcDataSource();
-    // A private in-memory database per test keeps them independent and parallel-safe.
-    ds.setURL("jdbc:h2:mem:quarantine" + DB_SEQ.incrementAndGet()
-        + ";MODE=PostgreSQL;DB_CLOSE_DELAY=-1");
-    ds.setUser("sa");
-    this.dataSource = ds;
-    this.store = new JdbcQuarantineStore(ds, CODEC);
-    runProductionDdl();
-  }
-
-  @AfterEach
-  void tearDown() throws Exception {
-    try (Connection c = dataSource.getConnection(); Statement s = c.createStatement()) {
-      s.execute("DROP ALL OBJECTS");
-    }
-  }
-
-  /** Runs the shipped migration verbatim — the schema under test is the one that deploys. */
-  private void runProductionDdl() throws SQLException {
-    Path ddl = Path.of("..", "invoice-service-app", "src", "main", "resources",
-        "db", "migration", "V1__party_registration_quarantine.sql");
-    String sql;
-    try {
-      sql = Files.readString(ddl, StandardCharsets.UTF_8);
-    } catch (IOException e) {
-      throw new UncheckedIOException("could not read the production DDL at " + ddl, e);
-    }
-    try (Connection c = dataSource.getConnection(); Statement s = c.createStatement()) {
-      s.execute(sql);
-    }
-  }
-
-  private static PartyRegistrationDetails party(String golden, String siren) {
+  private static PartyRegistrationDetails party() {
     return new PartyRegistrationDetails(null, null, null, null, null, null,
-        golden, "Acme SA", "ACME", siren, "12345678900012", List.of());
+        "G1", "Acme SA", "ACME", "123456789", "12345678900012", List.of());
   }
 
-  private static QuarantineRecord record(String lookupKey, String fingerprint,
-                                         Servability servability,
+  @BeforeEach
+  void setUp() throws SQLException {
+    dataSource = mock(DataSource.class);
+    connection = mock(Connection.class);
+    when(dataSource.getConnection()).thenReturn(connection);
+    store = new JdbcQuarantineStore(dataSource, CODEC);
+  }
+
+  /**
+   * Wires a statement whose query returns the given (already-scripted) result set.
+   *
+   * <p>Pick fragments carefully: the row lock is issued as {@code SELECT ... FOR UPDATE}, so a
+   * matcher of {@code contains("UPDATE")} catches the SELECT too and hands back the wrong mock.
+   * {@link #SELECT_FOR_UPDATE} and {@link #UPDATE_STATEMENT} are unambiguous.
+   */
+  private PreparedStatement stubStatement(String sqlFragment, ResultSet rs) throws SQLException {
+    PreparedStatement ps = mock(PreparedStatement.class);
+    when(connection.prepareStatement(contains(sqlFragment))).thenReturn(ps);
+    if (rs != null) {
+      when(ps.executeQuery()).thenReturn(rs);
+    }
+    return ps;
+  }
+
+  /** A result set positioned on one fully-populated row, then exhausted. */
+  private static ResultSet oneRow(Map<String, Object> values) throws SQLException {
+    ResultSet rs = mock(ResultSet.class);
+    when(rs.next()).thenReturn(true, false);
+    when(rs.getLong("id")).thenReturn((Long) values.getOrDefault("id", 7L));
+    when(rs.getString("key_space")).thenReturn((String) values.getOrDefault("key_space", "SIREN"));
+    when(rs.getString("lookup_key")).thenReturn((String) values.getOrDefault("lookup_key", "123456789"));
+    when(rs.getString("anomaly_fingerprint")).thenReturn((String) values.getOrDefault("anomaly_fingerprint", "fp-1"));
+    when(rs.getString("anomaly_types")).thenReturn((String) values.getOrDefault("anomaly_types", "MISSING_SIRET"));
+    when(rs.getString("servability")).thenReturn((String) values.getOrDefault("servability", "SERVABLE"));
+    when(rs.getString("raw_payload")).thenReturn((String) values.getOrDefault("raw_payload", "serialized:1"));
+    when(rs.getString("corrected_payload")).thenReturn((String) values.get("corrected_payload"));
+    when(rs.getString("status")).thenReturn((String) values.getOrDefault("status", "PENDING"));
+    when(rs.getTimestamp("detected_at")).thenReturn((Timestamp) values.get("detected_at"));
+    when(rs.getTimestamp("updated_at")).thenReturn((Timestamp) values.get("updated_at"));
+    when(rs.getTimestamp("notified_at")).thenReturn((Timestamp) values.get("notified_at"));
+    when(rs.getString("corrected_by")).thenReturn((String) values.get("corrected_by"));
+    when(rs.getString("notes")).thenReturn((String) values.get("notes"));
+    return rs;
+  }
+
+  /** A result set standing in for {@code getGeneratedKeys()} — one row carrying the new id. */
+  private static ResultSet generatedKey(long id) throws SQLException {
+    ResultSet keys = mock(ResultSet.class);
+    when(keys.next()).thenReturn(true, false);
+    when(keys.getLong(1)).thenReturn(id);
+    when(keys.getLong("id")).thenReturn(id);
+    return keys;
+  }
+
+  /** A result set with no rows. */
+  private static ResultSet noRows() throws SQLException {
+    ResultSet rs = mock(ResultSet.class);
+    when(rs.next()).thenReturn(false);
+    return rs;
+  }
+
+  private static QuarantineRecord record(Set<AnomalyType> types,
                                          List<PartyRegistrationDetails> raw) {
-    return new QuarantineRecord(null, "SIREN", lookupKey, fingerprint,
-        Set.of(AnomalyType.MISSING_SIRET), servability, raw, null,
-        QuarantineStatus.PENDING,
-        Instant.now().truncatedTo(ChronoUnit.MILLIS),
-        Instant.now().truncatedTo(ChronoUnit.MILLIS),
-        null, null, null);
+    return new QuarantineRecord(null, "SIREN", "123456789", "fp-1", types,
+        Servability.SERVABLE, raw, null, QuarantineStatus.PENDING,
+        Instant.EPOCH, Instant.EPOCH, null, null, null);
   }
 
-  // ── Insert and read back ──────────────────────────────────────────────────
+  // ── Reading ───────────────────────────────────────────────────────────────
 
-  @Test
-  @DisplayName("a new defect is inserted and always warrants notification")
-  void insertNewDefect() {
-    QuarantineStore.UpsertResult result =
-        store.upsert(record("123456789", "fp-1", Servability.SERVABLE, List.of(party("G1", "123456789"))));
+  @Nested
+  @DisplayName("findActive")
+  class FindActive {
 
-    assertTrue(result.needsNotification(), "a defect nobody has seen must be reported");
-    assertNotNull(result.record().id());
+    @Test
+    @DisplayName("binds the key and maps every column back onto the record")
+    void mapsAllColumns() throws SQLException {
+      Timestamp detected = Timestamp.from(Instant.parse("2026-04-14T10:00:00Z"));
+      Timestamp notified = Timestamp.from(Instant.parse("2026-04-14T11:00:00Z"));
+      ResultSet rs = oneRow(Map.of(
+          "id", 42L, "status", "CORRECTED", "corrected_payload", "serialized:1",
+          "detected_at", detected, "notified_at", notified,
+          "corrected_by", "ops-user", "notes", "supplied by hand",
+          "anomaly_types", "MISSING_SIRET,GOLDEN_PARTY_MISMATCH"));
+      PreparedStatement ps = stubStatement("FROM party_registration_quarantine", rs);
+      // rs is materialised before stubStatement so no when(...) nests inside another.
 
-    QuarantineRecord read = store.findActive("SIREN", "123456789").orElseThrow();
-    assertEquals("fp-1", read.fingerprint());
-    assertEquals(QuarantineStatus.PENDING, read.status());
-    assertEquals(Servability.SERVABLE, read.servability());
-    assertEquals(Set.of(AnomalyType.MISSING_SIRET), read.anomalyTypes());
-    assertEquals("G1", read.rawPayload().get(0).goldenBdrId());
-    assertNull(read.notifiedAt(), "nothing has been sent yet");
-    assertFalse(read.alreadyNotified());
+      QuarantineRecord found = store.findActive("SIREN", "123456789").orElseThrow();
+
+      verify(ps).setString(1, "SIREN");
+      verify(ps).setString(2, "123456789");
+      assertEquals(42L, found.id());
+      assertEquals("SIREN", found.keySpace());
+      assertEquals("fp-1", found.fingerprint());
+      assertEquals(Set.of(AnomalyType.MISSING_SIRET, AnomalyType.GOLDEN_PARTY_MISMATCH),
+          found.anomalyTypes());
+      assertEquals(Servability.SERVABLE, found.servability());
+      assertEquals(QuarantineStatus.CORRECTED, found.status());
+      assertEquals(detected.toInstant(), found.detectedAt());
+      assertEquals(notified.toInstant(), found.notifiedAt());
+      assertTrue(found.alreadyNotified());
+      assertEquals("ops-user", found.correctedBy());
+      assertEquals("supplied by hand", found.notes());
+      assertTrue(found.hasUsableCorrection());
+    }
+
+    @Test
+    @DisplayName("no row yields empty rather than a synthesised record")
+    void noRowYieldsEmpty() throws SQLException {
+      stubStatement("FROM party_registration_quarantine", noRows());
+      assertTrue(store.findActive("SIREN", "000000000").isEmpty());
+    }
+
+    @Test
+    @DisplayName("a null timestamp column maps to a null instant, not the epoch")
+    void nullTimestampsStayNull() throws SQLException {
+      ResultSet rs = oneRow(Map.of());
+      stubStatement("FROM party_registration_quarantine", rs);
+      QuarantineRecord found = store.findActive("SIREN", "123456789").orElseThrow();
+      assertNull(found.notifiedAt(), "never notified must not read as notified at epoch");
+      assertFalse(found.alreadyNotified());
+    }
+
+    @Test
+    @DisplayName("a null payload column deserialises to null")
+    void nullPayloadStaysNull() throws SQLException {
+      Map<String, Object> row = new java.util.HashMap<>();
+      row.put("raw_payload", null);
+      ResultSet rs = oneRow(row);
+      stubStatement("FROM party_registration_quarantine", rs);
+      assertNull(store.findActive("SIREN", "123456789").orElseThrow().rawPayload());
+    }
   }
 
-  @Test
-  @DisplayName("a defect with no payload round-trips as a null payload")
-  void nullPayloadRoundTrips() {
-    store.upsert(record("123456789", "fp-1", Servability.BLOCKING, null));
-    QuarantineRecord read = store.findActive("SIREN", "123456789").orElseThrow();
-    assertNull(read.rawPayload(),
-        "NO_REGISTRATION_FOUND has nothing to store, and that must survive the round trip");
+  // ── The anomaly-type CSV ──────────────────────────────────────────────────
+
+  @Nested
+  @DisplayName("anomaly type column")
+  class AnomalyTypes {
+
+    private Set<AnomalyType> readBack(String csv) throws SQLException {
+      Map<String, Object> row = new java.util.HashMap<>();
+      row.put("anomaly_types", csv);
+      ResultSet rs = oneRow(row);
+      stubStatement("FROM party_registration_quarantine", rs);
+      return store.findActive("SIREN", "123456789").orElseThrow().anomalyTypes();
+    }
+
+    @Test
+    @DisplayName("several types round-trip")
+    void severalTypes() throws SQLException {
+      assertEquals(Set.of(AnomalyType.MISSING_SIRET, AnomalyType.MISSING_SIREN),
+          readBack("MISSING_SIRET,MISSING_SIREN"));
+    }
+
+    @Test
+    @DisplayName("null and blank both read as no types recorded")
+    void nullAndBlank() throws SQLException {
+      assertTrue(readBack(null).isEmpty());
+      assertTrue(readBack("   ").isEmpty());
+    }
+
+    @Test
+    @DisplayName("blank entries between separators are skipped")
+    void blankEntriesSkipped() throws SQLException {
+      assertEquals(Set.of(AnomalyType.MISSING_SIRET), readBack("MISSING_SIRET,, ,"));
+    }
+
+    @Test
+    @DisplayName("a name this build no longer knows is skipped, not fatal")
+    void unknownNameIsSkipped() throws SQLException {
+      assertEquals(Set.of(AnomalyType.MISSING_SIRET),
+          readBack("MISSING_SIRET,RETIRED_IN_A_LATER_RELEASE"),
+          "a rolling deployment must not make older rows unreadable");
+    }
+
+    @Test
+    @DisplayName("types are written back as a comma-separated list")
+    void typesAreJoinedOnWrite() throws SQLException {
+      stubStatement(SELECT_FOR_UPDATE, noRows());
+      ResultSet keys = generatedKey(5L);
+      PreparedStatement insert = mock(PreparedStatement.class);
+      when(connection.prepareStatement(contains("INSERT"), anyInt())).thenReturn(insert);
+      when(insert.getGeneratedKeys()).thenReturn(keys);
+
+      store.upsert(record(Set.of(AnomalyType.MISSING_SIRET), List.of(party())));
+
+      verify(insert).setString(eq(4), contains("MISSING_SIRET"));
+    }
   }
 
-  @Test
-  @DisplayName("an unknown key yields empty rather than a synthesised row")
-  void unknownKeyIsEmpty() {
-    assertTrue(store.findActive("SIREN", "000000000").isEmpty());
+  // ── Writing ───────────────────────────────────────────────────────────────
+
+  @Nested
+  @DisplayName("upsert")
+  class Upsert {
+
+    @Test
+    @DisplayName("no existing row inserts, and a brand-new defect always warrants notification")
+    void insertsWhenAbsent() throws SQLException {
+      stubStatement(SELECT_FOR_UPDATE, noRows());
+      ResultSet keys = generatedKey(5L);
+      PreparedStatement insert = mock(PreparedStatement.class);
+      when(connection.prepareStatement(contains("INSERT"), anyInt())).thenReturn(insert);
+      when(insert.getGeneratedKeys()).thenReturn(keys);
+
+      QuarantineStore.UpsertResult result =
+          store.upsert(record(Set.of(AnomalyType.MISSING_SIRET), List.of(party())));
+
+      assertTrue(result.needsNotification(), "a defect nobody has seen must be reported");
+      verify(insert).setString(1, "SIREN");
+      verify(insert).setString(2, "123456789");
+      verify(insert).setString(3, "fp-1");
+      verify(insert).setString(5, "SERVABLE");
+      verify(insert).setString(6, "serialized:1");
+      verify(insert).setString(7, "PENDING");
+      verify(insert).executeUpdate();
+      verify(connection).commit();
+    }
+
+    @Test
+    @DisplayName("the same defect on an already-notified row does not re-notify")
+    void repeatDoesNotReNotify() throws SQLException {
+      Timestamp notified = Timestamp.from(Instant.parse("2026-04-14T11:00:00Z"));
+      ResultSet existing = oneRow(Map.of(
+          "id", 7L, "anomaly_fingerprint", "fp-1", "notified_at", notified));
+      stubStatement(SELECT_FOR_UPDATE, existing);
+      ResultSet readBack = oneRow(Map.of("id", 7L, "notified_at", notified));
+      stubStatement(FIND_BY_ID, readBack);
+      PreparedStatement update = mock(PreparedStatement.class);
+      when(connection.prepareStatement(contains(UPDATE_STATEMENT))).thenReturn(update);
+
+      QuarantineStore.UpsertResult result =
+          store.upsert(record(Set.of(AnomalyType.MISSING_SIRET), List.of(party())));
+
+      assertFalse(result.needsNotification(),
+          "the gate is the notified_at column, so it holds across restarts and pods");
+      verify(update).executeUpdate();
+    }
+
+    @Test
+    @DisplayName("a changed fingerprint is a new defect and re-notifies")
+    void changedFingerprintReNotifies() throws SQLException {
+      Timestamp notified = Timestamp.from(Instant.parse("2026-04-14T11:00:00Z"));
+      ResultSet existing = oneRow(Map.of(
+          "id", 7L, "anomaly_fingerprint", "fp-OLD", "notified_at", notified));
+      stubStatement(SELECT_FOR_UPDATE, existing);
+      ResultSet readBack = oneRow(Map.of("id", 7L, "anomaly_fingerprint", "fp-1"));
+      stubStatement(FIND_BY_ID, readBack);
+      PreparedStatement update = mock(PreparedStatement.class);
+      when(connection.prepareStatement(contains(UPDATE_STATEMENT))).thenReturn(update);
+
+      assertTrue(store.upsert(record(Set.of(AnomalyType.MISSING_SIRET), List.of(party())))
+          .needsNotification(), "a different bad value is a different problem");
+    }
+
+    @Test
+    @DisplayName("an existing but un-notified row still warrants notification")
+    void unnotifiedRepeatStillNotifies() throws SQLException {
+      ResultSet existing = oneRow(Map.of("id", 7L, "anomaly_fingerprint", "fp-1"));
+      stubStatement(SELECT_FOR_UPDATE, existing);
+      ResultSet readBack = oneRow(Map.of("id", 7L));
+      stubStatement(FIND_BY_ID, readBack);
+      PreparedStatement update = mock(PreparedStatement.class);
+      when(connection.prepareStatement(contains(UPDATE_STATEMENT))).thenReturn(update);
+
+      assertTrue(store.upsert(record(Set.of(AnomalyType.MISSING_SIRET), null))
+          .needsNotification(), "the first attempt never got out, so try again");
+    }
+
+    @Test
+    @DisplayName("a null payload is bound as null rather than the string \"null\"")
+    void nullPayloadBoundAsNull() throws SQLException {
+      stubStatement(SELECT_FOR_UPDATE, noRows());
+      ResultSet keys = generatedKey(5L);
+      PreparedStatement insert = mock(PreparedStatement.class);
+      when(connection.prepareStatement(contains("INSERT"), anyInt())).thenReturn(insert);
+      when(insert.getGeneratedKeys()).thenReturn(keys);
+
+      store.upsert(record(Set.of(AnomalyType.NO_REGISTRATION_FOUND), null));
+
+      verify(insert).setString(6, null);
+    }
+
+    @Test
+    @DisplayName("the write runs in a transaction and restores autocommit")
+    void runsInATransaction() throws SQLException {
+      stubStatement(SELECT_FOR_UPDATE, noRows());
+      ResultSet keys = generatedKey(5L);
+      PreparedStatement insert = mock(PreparedStatement.class);
+      when(connection.prepareStatement(contains("INSERT"), anyInt())).thenReturn(insert);
+      when(insert.getGeneratedKeys()).thenReturn(keys);
+
+      store.upsert(record(Set.of(AnomalyType.MISSING_SIRET), List.of(party())));
+
+      verify(connection).setAutoCommit(false);
+      verify(connection).commit();
+      verify(connection).setAutoCommit(true);
+      verify(connection, never()).rollback();
+    }
+
+    @Test
+    @DisplayName("a failure mid-write rolls back rather than leaving a partial row")
+    void failureRollsBack() throws SQLException {
+      stubStatement(SELECT_FOR_UPDATE, noRows());
+      PreparedStatement insert = mock(PreparedStatement.class);
+      when(connection.prepareStatement(contains("INSERT"), anyInt())).thenReturn(insert);
+      when(insert.executeUpdate()).thenThrow(new SQLException("constraint violated"));
+
+      assertThrows(RuntimeException.class,
+          () -> store.upsert(record(Set.of(AnomalyType.MISSING_SIRET), List.of(party()))));
+
+      verify(connection).rollback();
+      verify(connection, never()).commit();
+      verify(connection).setAutoCommit(true);
+    }
   }
 
-  // ── The notify-once gate ──────────────────────────────────────────────────
+  // ── Updates ───────────────────────────────────────────────────────────────
 
-  @Test
-  @DisplayName("the same defect seen again does not warrant a second notification")
-  void repeatOfTheSameDefectIsSilent() {
-    QuarantineStore.UpsertResult first =
-        store.upsert(record("123456789", "fp-1", Servability.SERVABLE, List.of(party("G1", "123456789"))));
-    store.markNotified(first.record().id(), Instant.now());
+  @Nested
+  @DisplayName("updates")
+  class Updates {
 
-    QuarantineStore.UpsertResult second =
-        store.upsert(record("123456789", "fp-1", Servability.SERVABLE, List.of(party("G1", "123456789"))));
+    @Test
+    @DisplayName("markNotified binds the timestamp and the row id")
+    void markNotified() throws SQLException {
+      PreparedStatement ps = mock(PreparedStatement.class);
+      when(connection.prepareStatement(anyString())).thenReturn(ps);
+      when(ps.executeUpdate()).thenReturn(1);
 
-    assertFalse(second.needsNotification(),
-        "the gate is the notified_at column, so it holds across restarts and across pods");
-    assertEquals(first.record().id(), second.record().id(), "the same row is updated, not duplicated");
+      Instant at = Instant.parse("2026-04-14T11:00:00Z");
+      store.markNotified(7L, at);
+
+      verify(ps).setTimestamp(1, Timestamp.from(at));
+      verify(ps).setLong(3, 7L);
+      verify(ps).executeUpdate();
+    }
+
+    @Test
+    @DisplayName("applyCorrection stores the payload, flips the status and reads the row back")
+    void applyCorrection() throws SQLException {
+      PreparedStatement update = mock(PreparedStatement.class);
+      when(connection.prepareStatement(contains(UPDATE_STATEMENT))).thenReturn(update);
+      when(update.executeUpdate()).thenReturn(1);
+      ResultSet readBack = oneRow(Map.of(
+          "id", 7L, "status", "CORRECTED", "corrected_payload", "serialized:1",
+          "corrected_by", "ops-user"));
+      stubStatement(FIND_BY_ID, readBack);
+
+      QuarantineRecord corrected =
+          store.applyCorrection(7L, List.of(party()), "ops-user", "by hand");
+
+      verify(update).setString(1, "serialized:1");
+      verify(update).setString(2, "CORRECTED");
+      verify(update).setString(3, "ops-user");
+      verify(update).setString(4, "by hand");
+      verify(update).setLong(6, 7L);
+      assertEquals(QuarantineStatus.CORRECTED, corrected.status());
+      assertTrue(corrected.hasUsableCorrection());
+    }
+
+    @Test
+    @DisplayName("correcting a row that is not there is an error, not a silent no-op")
+    void applyCorrectionToMissingRow() throws SQLException {
+      PreparedStatement update = mock(PreparedStatement.class);
+      when(connection.prepareStatement(contains(UPDATE_STATEMENT))).thenReturn(update);
+      when(update.executeUpdate()).thenReturn(0);
+
+      assertThrows(RuntimeException.class,
+          () -> store.applyCorrection(999L, List.of(party()), "ops", null));
+    }
+
+    @Test
+    @DisplayName("softDelete records who retired the row")
+    void softDelete() throws SQLException {
+      PreparedStatement ps = mock(PreparedStatement.class);
+      when(connection.prepareStatement(anyString())).thenReturn(ps);
+      when(ps.executeUpdate()).thenReturn(1);
+
+      store.softDelete(7L, "auto:upstream-resolved");
+
+      verify(ps).setString(1, "SOFT_DELETED");
+      verify(ps).setString(2, "auto:upstream-resolved");
+      verify(ps).setLong(4, 7L);
+    }
   }
 
-  @Test
-  @DisplayName("an unnotified repeat still warrants notification")
-  void unnotifiedRepeatStillNotifies() {
-    store.upsert(record("123456789", "fp-1", Servability.SERVABLE, null));
-    assertTrue(store.upsert(record("123456789", "fp-1", Servability.SERVABLE, null))
-        .needsNotification(), "the first attempt never got out, so try again");
+  // ── List queries ──────────────────────────────────────────────────────────
+
+  @Nested
+  @DisplayName("list queries")
+  class Queries {
+
+    /** A result set over N identical rows. */
+    private ResultSet rows(int count) throws SQLException {
+      ResultSet rs = mock(ResultSet.class);
+      Boolean[] tail = new Boolean[count];
+      java.util.Arrays.fill(tail, true);
+      tail[count - 1] = false;
+      when(rs.next()).thenReturn(true, tail);
+      when(rs.getLong("id")).thenReturn(7L);
+      when(rs.getString(anyString())).thenReturn("SIREN");
+      when(rs.getString("anomaly_types")).thenReturn("MISSING_SIRET");
+      when(rs.getString("servability")).thenReturn("SERVABLE");
+      when(rs.getString("status")).thenReturn("PENDING");
+      when(rs.getTimestamp(anyString())).thenReturn(null);
+      return rs;
+    }
+
+    @Test
+    @DisplayName("findChangedSince binds the watermark and the limit")
+    void findChangedSince() throws SQLException {
+      ResultSet rs = rows(3);
+      PreparedStatement ps = stubStatement("updated_at", rs);
+      Instant since = Instant.parse("2026-04-14T10:00:00Z");
+
+      List<QuarantineRecord> changed = store.findChangedSince(since, 500);
+
+      assertEquals(3, changed.size());
+      verify(ps).setTimestamp(1, Timestamp.from(since));
+      verify(ps).setInt(2, 500);
+    }
+
+    @Test
+    @DisplayName("findByStatus binds the status and the limit")
+    void findByStatus() throws SQLException {
+      ResultSet rs = rows(2);
+      PreparedStatement ps = stubStatement("status", rs);
+
+      assertEquals(2, store.findByStatus(QuarantineStatus.PENDING, 100).size());
+      verify(ps).setString(1, "PENDING");
+      verify(ps).setInt(2, 100);
+    }
+
+    @Test
+    @DisplayName("no matching rows yields an empty list, not null")
+    void emptyResult() throws SQLException {
+      stubStatement("updated_at", noRows());
+      assertTrue(store.findChangedSince(Instant.EPOCH, 10).isEmpty());
+    }
   }
 
-  @Test
-  @DisplayName("a changed defect is a new problem and re-notifies")
-  void changedFingerprintReNotifies() {
-    QuarantineStore.UpsertResult first =
-        store.upsert(record("123456789", "fp-1", Servability.SERVABLE, null));
-    store.markNotified(first.record().id(), Instant.now());
+  // ── Failure translation ───────────────────────────────────────────────────
 
-    QuarantineStore.UpsertResult changed =
-        store.upsert(record("123456789", "fp-2", Servability.SERVABLE, null));
+  @Nested
+  @DisplayName("failure translation")
+  class Failures {
 
-    assertTrue(changed.needsNotification(), "a different bad value is a different defect");
-    assertEquals("fp-2", store.findActive("SIREN", "123456789").orElseThrow().fingerprint());
-  }
+    @Test
+    @DisplayName("a dead connection surfaces as the store's own exception on every path")
+    void deadConnectionSurfaces() throws SQLException {
+      when(dataSource.getConnection()).thenThrow(new SQLException("connection refused"));
 
-  @Test
-  @DisplayName("marking notified is what closes the gate")
-  void markNotifiedClosesTheGate() {
-    QuarantineRecord row = store.upsert(record("123456789", "fp-1", Servability.SERVABLE, null)).record();
-    Instant at = Instant.now().truncatedTo(ChronoUnit.MILLIS);
+      assertThrows(JdbcQuarantineStore.QuarantineStoreException.class,
+          () -> store.findActive("SIREN", "123456789"));
+      assertThrows(JdbcQuarantineStore.QuarantineStoreException.class,
+          () -> store.upsert(record(Set.of(AnomalyType.MISSING_SIRET), null)));
+      assertThrows(JdbcQuarantineStore.QuarantineStoreException.class,
+          () -> store.markNotified(1L, Instant.now()));
+      assertThrows(JdbcQuarantineStore.QuarantineStoreException.class,
+          () -> store.softDelete(1L, "ops"));
+      assertThrows(JdbcQuarantineStore.QuarantineStoreException.class,
+          () -> store.applyCorrection(1L, List.of(party()), "ops", null));
+      assertThrows(JdbcQuarantineStore.QuarantineStoreException.class,
+          () -> store.findChangedSince(Instant.EPOCH, 10));
+      assertThrows(JdbcQuarantineStore.QuarantineStoreException.class,
+          () -> store.findByStatus(QuarantineStatus.PENDING, 10));
+    }
 
-    store.markNotified(row.id(), at);
+    @Test
+    @DisplayName("the original SQLException is kept as the cause")
+    void causeIsPreserved() throws SQLException {
+      SQLException root = new SQLException("connection refused");
+      when(dataSource.getConnection()).thenThrow(root);
 
-    assertTrue(store.findActive("SIREN", "123456789").orElseThrow().alreadyNotified());
-  }
+      JdbcQuarantineStore.QuarantineStoreException e =
+          assertThrows(JdbcQuarantineStore.QuarantineStoreException.class,
+              () -> store.findActive("SIREN", "123456789"));
+      assertSame(root, e.getCause(), "the driver's message is what a DBA needs");
+    }
 
-  // ── Corrections ───────────────────────────────────────────────────────────
-
-  @Test
-  @DisplayName("a correction is stored, flips the status, and is readable back")
-  void applyCorrection() {
-    QuarantineRecord row = store.upsert(
-        record("123456789", "fp-1", Servability.BLOCKING, null)).record();
-
-    QuarantineRecord corrected = store.applyCorrection(row.id(),
-        List.of(party("G9", "987654321")), "ops-user", "supplied by hand");
-
-    assertEquals(QuarantineStatus.CORRECTED, corrected.status());
-    assertEquals("ops-user", corrected.correctedBy());
-    assertEquals("supplied by hand", corrected.notes());
-    assertTrue(corrected.hasUsableCorrection());
-    assertEquals("987654321", corrected.correctedPayload().get(0).siren());
-
-    QuarantineRecord read = store.findActive("SIREN", "123456789").orElseThrow();
-    assertTrue(read.hasUsableCorrection(), "the correction outranks the referential from now on");
-  }
-
-  @Test
-  @DisplayName("a changed defect discards the correction written against the old value")
-  void changedDefectDiscardsTheCorrection() {
-    QuarantineRecord row = store.upsert(
-        record("123456789", "fp-1", Servability.BLOCKING, null)).record();
-    store.applyCorrection(row.id(), List.of(party("G9", "987654321")), "ops", null);
-
-    store.upsert(record("123456789", "fp-2", Servability.BLOCKING, null));
-
-    QuarantineRecord read = store.findActive("SIREN", "123456789").orElseThrow();
-    assertFalse(read.hasUsableCorrection(),
-        "a correction for a value that has since changed would be wrong to serve");
-  }
-
-  // ── Soft delete and history ───────────────────────────────────────────────
-
-  @Test
-  @DisplayName("a soft-deleted row leaves the key free without losing the history")
-  void softDeleteRetiresTheRow() {
-    QuarantineRecord row = store.upsert(
-        record("123456789", "fp-1", Servability.SERVABLE, null)).record();
-
-    store.softDelete(row.id(), "auto:upstream-resolved");
-
-    assertTrue(store.findActive("SIREN", "123456789").isEmpty(),
-        "the row is retired, so the referential value flows again");
-
-    QuarantineStore.UpsertResult fresh =
-        store.upsert(record("123456789", "fp-3", Servability.SERVABLE, null));
-    assertTrue(fresh.needsNotification());
-    assertFalse(fresh.record().id().equals(row.id()),
-        "a new row is created — NULL never collides in the unique index, so history accumulates");
-  }
-
-  // ── Queries the poller and console use ────────────────────────────────────
-
-  @Test
-  @DisplayName("findChangedSince drives cross-instance eviction")
-  void findChangedSince() {
-    Instant before = Instant.now().minusSeconds(60);
-    store.upsert(record("111111111", "fp-1", Servability.SERVABLE, null));
-    store.upsert(record("222222222", "fp-2", Servability.SERVABLE, null));
-
-    assertEquals(2, store.findChangedSince(before, 10).size());
-    assertEquals(1, store.findChangedSince(before, 1).size(), "the limit is honoured");
-    assertTrue(store.findChangedSince(Instant.now().plusSeconds(60), 10).isEmpty());
-  }
-
-  @Test
-  @DisplayName("findByStatus backs the operator console")
-  void findByStatus() {
-    QuarantineRecord pending = store.upsert(
-        record("111111111", "fp-1", Servability.SERVABLE, null)).record();
-    store.upsert(record("222222222", "fp-2", Servability.BLOCKING, null));
-    store.applyCorrection(pending.id(), List.of(party("G9", "987654321")), "ops", null);
-
-    assertEquals(1, store.findByStatus(QuarantineStatus.PENDING, 10).size());
-    assertEquals(1, store.findByStatus(QuarantineStatus.CORRECTED, 10).size());
-    assertTrue(store.findByStatus(QuarantineStatus.SOFT_DELETED, 10).isEmpty());
-  }
-
-  @Test
-  @DisplayName("rows for different keys are independent")
-  void keysAreIndependent() {
-    store.upsert(record("111111111", "fp-1", Servability.SERVABLE, null));
-    store.upsert(record("222222222", "fp-2", Servability.BLOCKING, null));
-
-    assertEquals("fp-1", store.findActive("SIREN", "111111111").orElseThrow().fingerprint());
-    assertEquals("fp-2", store.findActive("SIREN", "222222222").orElseThrow().fingerprint());
-  }
-
-  // ── Failure surface ───────────────────────────────────────────────────────
-
-  @Test
-  @DisplayName("a broken DataSource surfaces as the store's own exception type")
-  void brokenDataSourceSurfaces() {
-    JdbcDataSource broken = new JdbcDataSource();
-    broken.setURL("jdbc:h2:mem:nonexistent;IFEXISTS=TRUE");
-    broken.setUser("sa");
-    JdbcQuarantineStore failing = new JdbcQuarantineStore(broken, CODEC);
-
-    assertThrows(RuntimeException.class, () -> failing.findActive("SIREN", "123456789"));
-  }
-
-  @Test
-  @DisplayName("both collaborators are mandatory")
-  void collaboratorsMandatory() {
-    assertThrows(NullPointerException.class, () -> new JdbcQuarantineStore(null, CODEC));
-    assertThrows(NullPointerException.class, () -> new JdbcQuarantineStore(dataSource, null));
+    @Test
+    @DisplayName("both collaborators are mandatory")
+    void collaboratorsMandatory() {
+      assertThrows(NullPointerException.class, () -> new JdbcQuarantineStore(null, CODEC));
+      assertThrows(NullPointerException.class, () -> new JdbcQuarantineStore(dataSource, null));
+    }
   }
 }

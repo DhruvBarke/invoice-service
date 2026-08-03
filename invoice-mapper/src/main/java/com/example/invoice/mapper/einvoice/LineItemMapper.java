@@ -136,8 +136,11 @@ public final class LineItemMapper {
         item.setFeeCurrency(lea.getCurrencyID());
       }
       if (line.getItem() != null) {
+        // The line's Item.name is the supplier's own free-text label, so it lands on the
+        // description and nowhere else. It used to be copied onto feeType as well, which
+        // quietly turned arbitrary supplier text into a classification code — feeType is a
+        // taxonomy value and belongs to the fee referential, not to whatever the sender typed.
         item.setItemDescription(line.getItem().getName());
-        item.setFeeType(line.getItem().getName());
       }
       if (line.getInvoicedQuantity() != null) {
         item.setNotionQuantity(line.getInvoicedQuantity().getValue());

@@ -11,10 +11,17 @@ import javax.sql.DataSource;
 /**
  * JDBC implementation of {@link ExistingInvoicePayableLookup}.
  *
- * <p>Reads through the {@code ix_ip_provider_ref_status} composite index defined in
- * {@code V2__t_invoice_payable.sql}. LIMIT 1 (or ROWNUM = 1 on Oracle) is unnecessary — the
- * status filter combined with the fact that a REGISTERED row is what the duplicate check
- * cares about makes existence a single-row question in practice.
+ * <p>Reads through the {@code ix_pm_provider_ref_status} composite index defined in
+ * {@code V2__invoice_payable.sql}.
+ *
+ * <p>The key is {@code provider_reference} — the incoming e-invoice's own id — and NOT
+ * {@code invoice_reference}, which this service mints fresh from a sequence for every
+ * registration and so could never collide. "Have we already registered this supplier's
+ * invoice?" is only answerable against the supplier's own reference.
+ *
+ * <p>No LIMIT 1: the status filter makes existence a single-row question in practice, and the
+ * syntax for capping a result set is one of the few things that is not portable across the
+ * three dialects this schema targets.
  */
 public final class JdbcExistingInvoicePayableLookup implements ExistingInvoicePayableLookup {
 

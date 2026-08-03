@@ -131,25 +131,47 @@ class RegistrationBoundaryCasesTest {
   // ── PersistRequest normalisation ──────────────────────────────────────────
 
   @Test
-  @DisplayName("the persist request defaults its source and copies its item list")
+  @DisplayName("the persist request defaults its source and copies every collection")
   void persistRequestNormalisation() {
-    List<InvoiceItem> mutable = new ArrayList<>();
-    mutable.add(new InvoiceItem());
+    List<InvoiceItem> mutableItems = new ArrayList<>();
+    mutableItems.add(new InvoiceItem());
+    List<ExtractedAttachment> mutableJson = new ArrayList<>();
+    mutableJson.add(new ExtractedAttachment("a.pdf", new byte[] {1}, "application/pdf"));
 
     InvoicePayableStore.PersistRequest blankSource = new InvoicePayableStore.PersistRequest(
-        Business.MARK, "F01", "CUSTODY", "   ", null, mutable,
+        Business.MARK, "F01", "CUSTODY", "   ", null, mutableItems, mutableJson, List.of(),
         RegistrationOutcome.decide(List.of()));
     assertEquals("EINVOICE", blankSource.source(),
         "a blank source is as good as absent — this pipeline only handles e-invoices");
 
-    InvoicePayableStore.PersistRequest nullSource = new InvoicePayableStore.PersistRequest(
-        Business.MARK, "F01", "CUSTODY", null, null, null,
+    InvoicePayableStore.PersistRequest allNull = new InvoicePayableStore.PersistRequest(
+        Business.MARK, "F01", "CUSTODY", null, null, null, null, null,
         RegistrationOutcome.decide(List.of()));
-    assertEquals("EINVOICE", nullSource.source());
-    assertTrue(nullSource.items().isEmpty(), "a null item list normalises to empty");
+    assertEquals("EINVOICE", allNull.source());
+    assertTrue(allNull.items().isEmpty(), "a null item list normalises to empty");
+    assertTrue(allNull.jsonAttachments().isEmpty());
+    assertTrue(allNull.multipartAttachments().isEmpty());
 
-    mutable.clear();
+    mutableItems.clear();
+    mutableJson.clear();
     assertEquals(1, blankSource.items().size(), "the request keeps its own copy");
+    assertEquals(1, blankSource.jsonAttachments().size());
+  }
+
+  @Test
+  @DisplayName("the two attachment channels stay distinct all the way to the row")
+  void attachmentChannelsStayDistinct() {
+    ExtractedAttachment fromBody = new ExtractedAttachment("body.pdf", new byte[] {1}, "application/pdf");
+    ExtractedAttachment fromUpload = new ExtractedAttachment("upload.csv", new byte[] {2}, "text/csv");
+
+    InvoicePayableStore.PersistRequest req = new InvoicePayableStore.PersistRequest(
+        Business.MARK, "F01", "CUSTODY", "EINVOICE", null, List.of(),
+        List.of(fromBody), List.of(fromUpload), RegistrationOutcome.decide(List.of()));
+
+    assertEquals("body.pdf", req.jsonAttachments().get(0).filename());
+    assertEquals("upload.csv", req.multipartAttachments().get(0).filename());
+    // "No attachment" reads very differently depending on which channel was empty, so the row
+    // has to be able to tell them apart after the fact.
   }
 
   // ── Rule guards ───────────────────────────────────────────────────────────
