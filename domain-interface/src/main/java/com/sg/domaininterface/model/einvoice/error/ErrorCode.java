@@ -2,6 +2,12 @@ package com.sg.domaininterface.model.einvoice.error;
 
 
 
+
+
+
+
+
+
 /**
  * Central taxonomy of registration failure classes.
  *

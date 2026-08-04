@@ -1,24 +1,24 @@
 package com.sg.bootstrap.config;
 
-import com.sg.domain.alerting.RegistrationAlertEmailBridge;
+import com.sg.alert.RegistrationAlertEmailBridge;
 import com.sg.domain.einvoice.InvoiceRegistrationServiceImpl;
-import com.sg.domaininterface.service.InvoiceRegistrationService;
+import com.sg.domaininterface.port.in.InvoiceRegistrationService;
 import com.sg.domain.einvoice.rule.AttachmentPresentRule;
 import com.sg.domain.einvoice.rule.BrokerageTradeFileRule;
 import com.sg.domain.einvoice.rule.DuplicateInvoiceRule;
 import com.sg.domain.einvoice.rule.LineItemsPresentRule;
 import com.sg.domain.einvoice.rule.ValidationRegistry;
 import com.sg.domaininterface.model.einvoice.Business;
-import com.sg.domaininterface.port.einvoice.EInvoiceMappingPort;
-import com.sg.domaininterface.port.einvoice.ExistingInvoicePayableLookup;
-import com.sg.domaininterface.port.einvoice.InvoicePayableStore;
-import com.sg.domaininterface.port.einvoice.LifecycleEventPublisher;
-import com.sg.domaininterface.port.einvoice.RegistrationAlertNotifier;
-import com.sg.domaininterface.port.in.PartyRegistrationLookup;
+import com.sg.domaininterface.port.out.EInvoiceMappingPort;
+import com.sg.domaininterface.port.out.ExistingInvoicePayableLookup;
+import com.sg.domaininterface.port.out.InvoicePayableStore;
+import com.sg.domaininterface.port.out.LifecycleEventPublisher;
+import com.sg.domaininterface.port.out.RegistrationAlertNotifier;
+import com.sg.domaininterface.port.out.PartyRegistrationLookup;
 import com.sg.domaininterface.port.out.AlertEmailPort;
 import com.sg.domaininterface.rule.einvoice.ValidationRule;
 import com.sg.jpa.adapter.JdbcExistingInvoicePayableLookup;
-import com.sg.jpa.adapter.JdbcFeeTypeRepository;
+import com.sg.domaininterface.port.thirdparty.FeeCategoryReferentialService;
 import com.sg.jpa.adapter.JdbcInvoicePayableStore;
 import com.sg.mapper.einvoice.EInvoiceFacadeMapper;
 import com.sg.mapper.einvoice.EInvoiceMappingAdapter;
@@ -46,15 +46,20 @@ import org.springframework.context.annotation.Configuration;
 public class RegistrationConfig {
 
   /**
-   * Adapts the fee-type table to the mapper module's SPI, memoised for 30 minutes.
+   * Adapts the fee-type referential to the mapper module's SPI, memoised for 30 minutes.
    *
-   * <p>The TTL matters for correctness of the matcher's index caching, not just for load: see
+   * <p>It used to read a {@code t_fee_type} table in this service's own schema — a local copy of
+   * a referential someone else owns, and a copy is only ever as current as the last time
+   * somebody remembered to refresh it. It comes over the referential API now, like the party and
+   * document data.
+   *
+   * <p>The TTL matters for correctness of the matcher's index caching, not only for load: see
    * {@link CachingFeeTypeProvider}. Shorten it if fee types change more often than that.
    */
   @Bean
-  public FeeTypeProvider feeTypeProvider(DataSource dataSource) {
-    JdbcFeeTypeRepository repo = new JdbcFeeTypeRepository(dataSource);
-    return new CachingFeeTypeProvider(repo::findAllFeeTypes, java.time.Duration.ofMinutes(30));
+  public FeeTypeProvider feeTypeProvider(FeeCategoryReferentialService referential) {
+    return new CachingFeeTypeProvider(
+        referential::findAllFeeTypes, java.time.Duration.ofMinutes(30));
   }
 
   @Bean

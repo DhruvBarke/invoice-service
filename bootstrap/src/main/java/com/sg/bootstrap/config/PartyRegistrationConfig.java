@@ -1,23 +1,23 @@
 package com.sg.bootstrap.config;
 
-import com.sg.domain.alerting.AlertingSwitches;
-import com.sg.domain.alerting.QuarantiningResponseGuard;
+import com.sg.alert.AlertingSwitches;
+import com.sg.domain.quarantine.QuarantiningResponseGuard;
 import com.sg.domaininterface.port.out.AlertEmailPort;
 import com.sg.domaininterface.model.alerting.EmailAlertConfig;
-import com.sg.domain.alerting.EmailAlertPublisher;
-import com.sg.domain.alerting.SwitchGatedNotifier;
+import com.sg.alert.EmailAlertPublisher;
+import com.sg.alert.SwitchGatedNotifier;
 import com.sg.jpa.adapter.JdbcQuarantineStore;
-import com.sg.domain.quarantine.QuarantinePoller;
+import com.sg.alert.QuarantinePoller;
 import com.sg.domain.quarantine.QuarantineService;
 import com.sg.domaininterface.port.out.RecordCodec;
-import com.sg.domain.cache.CachingPartyRegistrationLookup;
-import com.sg.domain.cache.InboundPartyRegistrationCache;
-import com.sg.domain.cache.OutboundPartyRegistrationCache;
+import com.sg.caching.CachingPartyRegistrationLookup;
+import com.sg.caching.InboundPartyRegistrationCache;
+import com.sg.caching.OutboundPartyRegistrationCache;
 import com.sg.domaininterface.model.party.KeySpace;
-import com.sg.domaininterface.port.in.PartyRegistrationLookup;
+import com.sg.domaininterface.port.out.PartyRegistrationLookup;
 import com.sg.domaininterface.port.out.AlertNotifier;
 import com.sg.domaininterface.port.out.QuarantineStore;
-import com.sg.domaininterface.port.out.ReferentialGateway;
+import com.sg.domaininterface.port.thirdparty.PartyReferentialService;
 import com.sg.domaininterface.port.out.ResponseGuard;
 import com.sg.domain.party.AnomalyDetector;
 import com.sg.domaininterface.rule.party.DetectionPolicy;
@@ -103,18 +103,18 @@ public class PartyRegistrationConfig {
 
     @Bean(destroyMethod = "close")
     public InboundPartyRegistrationCache inboundPartyRegistrationCache(
-            ReferentialGateway gateway, PartyRegistrationProperties props, ResponseGuard guard) {
-        return new InboundPartyRegistrationCache(gateway,
+            PartyReferentialService referential, PartyRegistrationProperties props, ResponseGuard guard) {
+        return new InboundPartyRegistrationCache(referential,
                 props.getSiren().toCacheConfig(), props.getSiret().toCacheConfig(), guard);
     }
 
     @Bean(destroyMethod = "close")
     public OutboundPartyRegistrationCache outboundPartyRegistrationCache(
-            ReferentialGateway gateway, PartyRegistrationProperties props, ResponseGuard guard) {
-        return new OutboundPartyRegistrationCache(gateway, props.getBdrId().toCacheConfig(), guard);
+            PartyReferentialService referential, PartyRegistrationProperties props, ResponseGuard guard) {
+        return new OutboundPartyRegistrationCache(referential, props.getBdrId().toCacheConfig(), guard);
     }
 
-    /** The driving-port bean the invoice mappers inject. */
+    /** The lookup the invoice mappers inject — a cache in front of the referential. */
     @Bean
     public PartyRegistrationLookup partyRegistrationLookup(InboundPartyRegistrationCache inbound,
                                                             OutboundPartyRegistrationCache outbound) {

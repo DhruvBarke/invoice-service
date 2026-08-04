@@ -1,6 +1,6 @@
 package com.sg.bootstrap.config;
 
-import com.sg.domain.cache.CacheConfig;
+import com.sg.caching.CacheConfig;
 import java.time.Duration;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 

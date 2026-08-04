@@ -4,12 +4,10 @@ import com.sg.domaininterface.port.out.AlertEmailPort;
 import com.sg.domaininterface.model.alerting.EmailMessage;
 import com.sg.domaininterface.port.out.RecordCodec;
 import com.sg.domaininterface.model.party.PartyRegistrationDetails;
-import com.sg.domaininterface.model.party.RegistrationType;
-import com.sg.domaininterface.port.out.ReferentialGateway;
 import java.util.List;
 
 /**
- * The three adapters you must supply, as failing placeholders.
+ * The adapters you must supply, as failing placeholders.
  *
  * <p><b>Why placeholders that throw rather than no-ops.</b> A missing wiring must fail immediately
  * and loudly at first use, not degrade silently into "the cache never returns anything" or "alerts
@@ -21,29 +19,6 @@ import java.util.List;
 public final class AdapterPlaceholders {
 
     private AdapterPlaceholders() { }
-
-    /**
-     * Wraps your existing {@code ReferentialServiceApi}.
-     *
-     * <p>A ready-made implementation is provided at
-     * {@code invoice-service-cache/.../referential/ReferentialServiceApiGateway.java.template} —
-     * rename it to {@code .java}, uncomment the third-parties dependency in that module's pom, and
-     * adjust the accessor names to match your DTO.
-     */
-    public static final class UnwiredReferentialGateway implements ReferentialGateway {
-        @Override
-        public List<PartyRegistrationDetails> searchByBdrId(String bdrId) {
-            throw new IllegalStateException(
-                    "No ReferentialGateway bean is wired. See ReferentialServiceApiGateway.java.template");
-        }
-
-        @Override
-        public List<PartyRegistrationDetails> searchByRegistration(String registrationId,
-                                                                    RegistrationType type) {
-            throw new IllegalStateException(
-                    "No ReferentialGateway bean is wired. See ReferentialServiceApiGateway.java.template");
-        }
-    }
 
     /**
      * Wraps your mail endpoint. Typically two lines:

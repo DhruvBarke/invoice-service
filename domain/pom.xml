@@ -78,53 +78,6 @@
                 </executions>
             </plugin>
 
-            <!--
-              THE ONE MODULE WITH A COVERAGE FLOOR BELOW 100%.
-
-              EmailAlertPublisher batches alerts on a ScheduledExecutorService. Its catch blocks
-              are there because an exception escaping a scheduled task permanently cancels every
-              future run of it — the alerting would go silent and nothing would say so. Reaching
-              those arms in a test means making a send fail at a specific point mid-flight, and
-              the versions of that test worth having need a real transport to fail against.
-
-              16 lines and 3 branches, all of them in that class. The alternative was a test that
-              fakes reaching them and proves nothing, so the number is honest instead. If the
-              gap grows, it is not this class and the floor should not be moved to accommodate
-              it.
-
-              (Inherited from the module this code lived in before the restructure, where it was
-              measured against the same 16 lines.)
-            -->
-            <plugin>
-                <groupId>org.jacoco</groupId>
-                <artifactId>jacoco-maven-plugin</artifactId>
-                <executions>
-                    <execution>
-                        <id>check-coverage</id>
-                        <phase>verify</phase>
-                        <goals><goal>check</goal></goals>
-                        <configuration>
-                            <rules>
-                                <rule>
-                                    <element>BUNDLE</element>
-                                    <limits>
-                                        <limit>
-                                            <counter>LINE</counter>
-                                            <value>COVEREDRATIO</value>
-                                            <minimum>0.98</minimum>
-                                        </limit>
-                                        <limit>
-                                            <counter>BRANCH</counter>
-                                            <value>COVEREDRATIO</value>
-                                            <minimum>0.98</minimum>
-                                        </limit>
-                                    </limits>
-                                </rule>
-                            </rules>
-                        </configuration>
-                    </execution>
-                </executions>
-            </plugin>
         </plugins>
     </build>
 </project>

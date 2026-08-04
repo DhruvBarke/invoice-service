@@ -1,0 +1,66 @@
+package com.sg.bootstrap.config;
+
+import com.sg.domaininterface.port.thirdparty.FeeCategoryReferentialService;
+import com.sg.domaininterface.port.thirdparty.PartyReferentialService;
+import com.sg.domaininterface.port.thirdparty.SgDocReferentialService;
+import com.sg.thirdparties.ReferentialProperties;
+import com.sg.thirdparties.RestFeeCategoryReferentialClient;
+import com.sg.thirdparties.RestPartyReferentialClient;
+import com.sg.thirdparties.RestSgDocReferentialClient;
+import java.time.Duration;
+import org.springframework.boot.context.properties.EnableConfigurationProperties;
+import org.springframework.boot.web.client.RestTemplateBuilder;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.web.client.RestTemplate;
+
+/**
+ * The referential clients: party registration, fee categories and SGDoc.
+ *
+ * <p>All three are constructed here rather than annotated in {@code third-parties}, so that
+ * module stays a plain library — its clients take a {@link RestTemplate} and three URLs, and can
+ * be built in a test with neither a container nor a property file.
+ *
+ * <p><b>One RestTemplate, with timeouts set.</b> The default has none at all: a referential that
+ * accepts a connection and then stops responding would hold the calling thread until the socket
+ * gave up, which on some platforms is never. Under load that exhausts the request pool and the
+ * whole service stops answering because one dependency is slow — the failure looks like an
+ * invoice-service outage rather than a referential one.
+ */
+@Configuration
+@EnableConfigurationProperties(ReferentialUrlProperties.class)
+public class ReferentialConfig {
+
+    @Bean
+    public RestTemplate referentialRestTemplate(RestTemplateBuilder builder,
+                                                ReferentialUrlProperties props) {
+        return builder
+                .setConnectTimeout(Duration.ofMillis(props.getConnectTimeoutMillis()))
+                .setReadTimeout(Duration.ofMillis(props.getReadTimeoutMillis()))
+                .build();
+    }
+
+    @Bean
+    public ReferentialProperties referentialProperties(ReferentialUrlProperties props) {
+        return new ReferentialProperties(
+                props.getPartyBaseUrl(), props.getFeeCategoryBaseUrl(), props.getSgDocBaseUrl());
+    }
+
+    @Bean
+    public PartyReferentialService partyReferentialService(RestTemplate referentialRestTemplate,
+                                                           ReferentialProperties properties) {
+        return new RestPartyReferentialClient(referentialRestTemplate, properties);
+    }
+
+    @Bean
+    public FeeCategoryReferentialService feeCategoryReferentialService(
+            RestTemplate referentialRestTemplate, ReferentialProperties properties) {
+        return new RestFeeCategoryReferentialClient(referentialRestTemplate, properties);
+    }
+
+    @Bean
+    public SgDocReferentialService sgDocReferentialService(RestTemplate referentialRestTemplate,
+                                                           ReferentialProperties properties) {
+        return new RestSgDocReferentialClient(referentialRestTemplate, properties);
+    }
+}

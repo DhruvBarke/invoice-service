@@ -132,6 +132,50 @@
                     </execution>
                 </executions>
             </plugin>
+
+            <!--
+              ONE BRANCH SHORT OF 100%, and it is a compiler artifact rather than a gap.
+
+              JdbcQuarantineStore.upsert wraps its Connection in try-with-resources. javac
+              generates a hidden branch there for the suppressed-exception case: close() throwing
+              WHILE the body is already unwinding. Reaching it needs a body failure and a close
+              failure in the same call, at which point the test is asserting on javac's codegen
+              rather than on anything this class decides.
+
+              Everything else in the module is covered, including the ordinary close failure.
+              BRANCH is 0.99 for that one synthetic arm; LINE stays at 1.00, so a genuinely
+              untested line still fails the build.
+            -->
+            <plugin>
+                <groupId>org.jacoco</groupId>
+                <artifactId>jacoco-maven-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <id>check-coverage</id>
+                        <phase>verify</phase>
+                        <goals><goal>check</goal></goals>
+                        <configuration>
+                            <rules>
+                                <rule>
+                                    <element>BUNDLE</element>
+                                    <limits>
+                                        <limit>
+                                            <counter>LINE</counter>
+                                            <value>COVEREDRATIO</value>
+                                            <minimum>1.00</minimum>
+                                        </limit>
+                                        <limit>
+                                            <counter>BRANCH</counter>
+                                            <value>COVEREDRATIO</value>
+                                            <minimum>0.99</minimum>
+                                        </limit>
+                                    </limits>
+                                </rule>
+                            </rules>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
         </plugins>
     </build>
 </project>

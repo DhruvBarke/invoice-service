@@ -2,7 +2,7 @@ package com.sg.domain.einvoice.rule;
 
 import com.sg.domaininterface.model.einvoice.error.ErrorCode;
 import com.sg.domaininterface.model.einvoice.error.MappingError;
-import com.sg.domaininterface.port.einvoice.ExistingInvoicePayableLookup;
+import com.sg.domaininterface.port.out.ExistingInvoicePayableLookup;
 import com.sg.domaininterface.rule.einvoice.ValidationContext;
 import com.sg.domaininterface.rule.einvoice.ValidationRule;
 import java.util.List;

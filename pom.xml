@@ -37,7 +37,10 @@
         <module>build-tools/readme-doclet</module>
         <module>domain-interface</module>
         <module>domain</module>
-        <module>mapper</module>
+        <module>invoice-mapper</module>
+        <module>alert-adapter</module>
+        <module>caching-adapter</module>
+        <module>third-parties</module>
         <module>jpa-adapter</module>
         <module>rest-adapter</module>
         <module>bootstrap</module>
@@ -52,6 +55,7 @@
         <mockito.version>5.14.2</mockito.version>
         <lombok.version>1.18.30</lombok.version>
         <jackson.version>2.17.2</jackson.version>
+        <spring.version>6.1.13</spring.version>
     </properties>
 
     <dependencyManagement>
@@ -68,7 +72,22 @@
             </dependency>
             <dependency>
                 <groupId>${project.groupId}</groupId>
-                <artifactId>mapper</artifactId>
+                <artifactId>invoice-mapper</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>${project.groupId}</groupId>
+                <artifactId>alert-adapter</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>${project.groupId}</groupId>
+                <artifactId>caching-adapter</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>${project.groupId}</groupId>
+                <artifactId>third-parties</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>
@@ -104,6 +123,11 @@
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-starter-web</artifactId>
                 <version>${spring-boot.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.springframework</groupId>
+                <artifactId>spring-web</artifactId>
+                <version>${spring.version}</version>
             </dependency>
             <dependency>
                 <groupId>com.fasterxml.jackson.core</groupId>

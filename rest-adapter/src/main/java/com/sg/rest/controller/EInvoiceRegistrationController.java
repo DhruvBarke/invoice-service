@@ -3,11 +3,9 @@ package com.sg.rest.controller;
 import com.sg.domaininterface.model.einvoice.error.RegistrationOutcome;
 import com.sg.domaininterface.model.invoice.ExtractedAttachment;
 import com.sg.domaininterface.model.invoice.Invoice;
-import com.sg.domaininterface.service.InvoiceRegistrationService;
+import com.sg.domaininterface.port.in.InvoiceRegistrationService;
 import com.sg.rest.api.EInvoiceRegistrationApi;
-import com.sg.rest.codec.EInvoiceJsonCodec;
 import java.io.IOException;
-import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
@@ -19,10 +17,13 @@ import org.springframework.web.multipart.MultipartFile;
  * Implements {@link EInvoiceRegistrationApi}. The paths and media types are on the interface;
  * what is here is the adaptation.
  *
- * <p><b>No business logic.</b> This deserialises, converts Spring's {@link MultipartFile} to the
- * domain's {@link ExtractedAttachment}, and calls the service interface. It does not decide
- * whether a missing attachment matters — the pipeline's rules do, per business, and a controller
- * making that call would put the transport layer in charge of policy.
+ * <p><b>No parsing and no business logic.</b> The e-invoice arrives already bound to
+ * {@link Invoice} on both entry points, so a malformed document is rejected by the framework as
+ * a 400 before this class runs. All that remains is converting Spring's {@link MultipartFile} to
+ * the domain's {@link ExtractedAttachment} and calling the service interface.
+ *
+ * <p>It does not decide whether a missing attachment matters — the pipeline's rules do, per
+ * business, and a controller making that call would put the transport layer in charge of policy.
  */
 @RestController
 public class EInvoiceRegistrationController implements EInvoiceRegistrationApi {
@@ -34,25 +35,22 @@ public class EInvoiceRegistrationController implements EInvoiceRegistrationApi {
   }
 
   @Override
-  public ResponseEntity<RegistrationOutcome> registerJson(Invoice invoice) {
+  public ResponseEntity<RegistrationOutcome> register(Invoice invoice) {
     return ResponseEntity.ok(registrationService.register(invoice, List.of()));
   }
 
   @Override
-  public ResponseEntity<RegistrationOutcome> registerMultipart(
-      MultipartFile invoicePart, List<MultipartFile> files) throws IOException {
-
-    Invoice invoice = EInvoiceJsonCodec.fromJson(
-        new String(invoicePart.getBytes(), StandardCharsets.UTF_8));
+  public ResponseEntity<RegistrationOutcome> registerWithAttachments(
+      Invoice invoice, List<MultipartFile> files) {
     return ResponseEntity.ok(registrationService.register(invoice, toAttachments(files)));
   }
 
   /**
    * Adapt Spring's multipart type to the domain's.
    *
-   * <p>Empty parts are dropped. Browsers and several HTTP clients send a zero-length part for a
-   * file input that was left untouched, and treating that as an upload would suppress the
-   * embedded-attachment fallback for a sender who attached nothing at all.
+   * <p>Empty parts are dropped. Several clients send a zero-length part for a file input left
+   * untouched, and treating that as an upload would suppress the embedded-attachment fallback
+   * for a sender who attached nothing at all.
    */
   private static List<ExtractedAttachment> toAttachments(List<MultipartFile> files) {
     if (files == null) {

@@ -39,7 +39,19 @@
         </dependency>
         <dependency>
             <groupId>${project.groupId}</groupId>
-            <artifactId>mapper</artifactId>
+            <artifactId>alert-adapter</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>${project.groupId}</groupId>
+            <artifactId>caching-adapter</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>${project.groupId}</groupId>
+            <artifactId>third-parties</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>${project.groupId}</groupId>
+            <artifactId>invoice-mapper</artifactId>
         </dependency>
         <dependency>
             <groupId>${project.groupId}</groupId>

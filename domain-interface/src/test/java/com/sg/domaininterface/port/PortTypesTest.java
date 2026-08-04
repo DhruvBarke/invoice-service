@@ -10,15 +10,15 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.sg.domaininterface.model.party.PartyRegistrationDetails;
-import com.sg.domaininterface.port.in.PartyRegistrationLookup;
-import com.sg.domaininterface.port.in.PartyRegistrationUnavailableException;
-import com.sg.domaininterface.port.in.UnavailabilityReason;
+import com.sg.domaininterface.port.out.PartyRegistrationLookup;
+import com.sg.domaininterface.port.out.PartyRegistrationUnavailableException;
+import com.sg.domaininterface.port.out.UnavailabilityReason;
 import com.sg.domaininterface.port.out.AlertNotifier;
 import com.sg.domaininterface.port.out.GuardDecision;
 import com.sg.domaininterface.port.out.QuarantineRecord;
 import com.sg.domaininterface.port.out.QuarantineStatus;
 import com.sg.domaininterface.port.out.QuarantineStore;
-import com.sg.domaininterface.port.out.ReferentialGateway;
+import com.sg.domaininterface.port.thirdparty.ReferentialUnavailableException;
 import com.sg.domaininterface.port.out.ResponseGuard;
 import com.sg.domaininterface.model.party.Flow;
 import com.sg.domaininterface.model.party.KeySpace;
@@ -258,13 +258,22 @@ class PortTypesTest {
     }
 
     @Test
-    @DisplayName("the referential gateway's own failure type wraps its cause")
-    void referentialGatewayException() {
+    @DisplayName("a referential failure names the referential and says whether to retry")
+    void referentialUnavailable() {
       Exception cause = new IllegalStateException("socket closed");
-      ReferentialGateway.ReferentialUnavailableException e =
-          new ReferentialGateway.ReferentialUnavailableException("upstream down", cause);
-      assertSame(cause, e.getCause());
-      assertEquals("upstream down", e.getMessage());
+
+      ReferentialUnavailableException transientFailure =
+          new ReferentialUnavailableException("party-registration", "upstream down", true, cause);
+      assertSame(cause, transientFailure.getCause());
+      assertEquals("upstream down", transientFailure.getMessage());
+      assertEquals("party-registration", transientFailure.referential(),
+          "an alert that cannot name which referential failed sends someone looking at three");
+      assertTrue(transientFailure.isRetryable());
+
+      // A 4xx will be just as wrong next time. Retrying it only adds load to something that is
+      // already telling us the request is the problem.
+      assertFalse(new ReferentialUnavailableException("sgdoc", "bad request", false, null)
+          .isRetryable());
     }
   }
 

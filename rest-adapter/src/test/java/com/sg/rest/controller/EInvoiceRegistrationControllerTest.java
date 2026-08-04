@@ -11,12 +11,11 @@ import com.sg.domaininterface.model.einvoice.error.MappingError;
 import com.sg.domaininterface.model.einvoice.error.RegistrationOutcome;
 import com.sg.domaininterface.model.invoice.ExtractedAttachment;
 import com.sg.domaininterface.model.invoice.Invoice;
-import com.sg.domaininterface.service.InvoiceRegistrationService;
+import com.sg.domaininterface.port.in.InvoiceRegistrationService;
 import java.io.ByteArrayInputStream;
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
-import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -37,10 +36,6 @@ import org.springframework.web.multipart.MultipartFile;
  * type, and deciding which attachments to forward.
  */
 class EInvoiceRegistrationControllerTest {
-
-  private static final String INVOICE_JSON =
-      "{\"id\":\"SUP-INV-1\",\"accountingCustomerParty\":{\"party\":"
-          + "{\"endpointId\":{\"value\":\"552120222_MARK_CUSTODY\"}}}}";
 
   /** Records what the controller forwarded. */
   private static final class RecordingService implements InvoiceRegistrationService {
@@ -95,25 +90,27 @@ class EInvoiceRegistrationControllerTest {
     }
   }
 
-  private static StubFile json() {
-    return new StubFile("invoice", "invoice.json",
-        INVOICE_JSON.getBytes(StandardCharsets.UTF_8), "application/json");
+  private static Invoice invoice() {
+    Invoice invoice = new Invoice();
+    invoice.setId("SUP-INV-1");
+    return invoice;
   }
 
   // ── JSON body ─────────────────────────────────────────────────────────────
 
   @Test
-  @DisplayName("a JSON body is forwarded as-is, with no uploads")
+  @DisplayName("a bound invoice is forwarded as-is, with no uploads")
   void jsonBodyForwardsNoUploads() {
     Fixture f = fixture();
     Invoice invoice = new Invoice();
     invoice.setId("SUP-INV-1");
 
-    ResponseEntity<RegistrationOutcome> response = f.controller().registerJson(invoice);
+    ResponseEntity<RegistrationOutcome> response = f.controller().register(invoice);
 
     assertEquals(HttpStatus.OK, response.getStatusCode());
     assertNotNull(response.getBody());
-    assertSame(invoice, f.service().invoice.get(), "no copying, no re-parsing");
+    assertSame(invoice, f.service().invoice.get(),
+        "the framework already bound it — no copying, and nothing re-parsed here");
     assertTrue(f.service().attachments.get().isEmpty(),
         "there is no upload channel on this shape, so the service falls back to whatever the "
             + "document carries itself");
@@ -122,12 +119,12 @@ class EInvoiceRegistrationControllerTest {
   // ── Multipart ─────────────────────────────────────────────────────────────
 
   @Test
-  @DisplayName("the invoice part is parsed and the files are forwarded")
+  @DisplayName("the bound invoice part and the files are both forwarded")
   void multipartForwardsUploads() throws IOException {
     Fixture f = fixture();
 
-    ResponseEntity<RegistrationOutcome> response = f.controller().registerMultipart(
-        json(), List.of(new StubFile("files", "trades.csv", new byte[] {1, 2}, "text/csv")));
+    ResponseEntity<RegistrationOutcome> response = f.controller().registerWithAttachments(
+        invoice(), List.of(new StubFile("files", "trades.csv", new byte[] {1, 2}, "text/csv")));
 
     assertEquals(HttpStatus.OK, response.getStatusCode());
     assertEquals("SUP-INV-1", f.service().invoice.get().getId());
@@ -143,7 +140,7 @@ class EInvoiceRegistrationControllerTest {
   @DisplayName("absent files forward as empty, which is what triggers the fallback")
   void absentFilesForwardEmpty() throws IOException {
     Fixture f = fixture();
-    f.controller().registerMultipart(json(), null);
+    f.controller().registerWithAttachments(invoice(), null);
     assertTrue(f.service().attachments.get().isEmpty());
   }
 
@@ -155,7 +152,7 @@ class EInvoiceRegistrationControllerTest {
     // Several clients send a zero-length part for a file input left untouched. Forwarding it
     // would count as an upload and suppress the embedded-attachment fallback for a sender who
     // attached nothing at all.
-    f.controller().registerMultipart(json(), Arrays.asList(
+    f.controller().registerWithAttachments(invoice(), Arrays.asList(
         new StubFile("files", "", new byte[0], "application/octet-stream"), null));
 
     assertTrue(f.service().attachments.get().isEmpty(),
@@ -167,7 +164,7 @@ class EInvoiceRegistrationControllerTest {
   void missingPartMetadata() throws IOException {
     Fixture f = fixture();
 
-    f.controller().registerMultipart(json(),
+    f.controller().registerWithAttachments(invoice(),
         List.of(new StubFile("files", null, new byte[] {1}, null)));
 
     ExtractedAttachment a = f.service().attachments.get().get(0);
@@ -175,6 +172,7 @@ class EInvoiceRegistrationControllerTest {
     assertEquals("application/octet-stream", a.mimeType(),
         "an undeclared content type is recorded as the generic one rather than as null");
   }
+
 
   @Test
   @DisplayName("an unreadable part fails loudly rather than registering without it")
@@ -190,7 +188,7 @@ class EInvoiceRegistrationControllerTest {
     // Forwarding as though nothing was attached would hand the attachment rules a false premise
     // and refuse the invoice for a fault on our side of the wire.
     assertThrows(EInvoiceRegistrationController.UnreadableUploadException.class,
-        () -> f.controller().registerMultipart(json(), List.of(broken)));
+        () -> f.controller().registerWithAttachments(invoice(), List.of(broken)));
   }
 
   // ── Contract ──────────────────────────────────────────────────────────────
@@ -210,7 +208,7 @@ class EInvoiceRegistrationControllerTest {
 
     Invoice invoice = new Invoice();
     invoice.setId("SUP-INV-1");
-    ResponseEntity<RegistrationOutcome> response = f.controller().registerJson(invoice);
+    ResponseEntity<RegistrationOutcome> response = f.controller().register(invoice);
 
     // A client that retried on a 4xx would resubmit an invoice that is already recorded.
     assertEquals(HttpStatus.OK, response.getStatusCode());

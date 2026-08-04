@@ -1,10 +1,10 @@
 package com.sg.bootstrap.pipeline.testsupport;
 
 import com.sg.domaininterface.model.party.PartyRegistrationDetails;
-import com.sg.domaininterface.port.einvoice.InvoicePayableStore;
-import com.sg.domaininterface.port.einvoice.LifecycleEventPublisher;
-import com.sg.domaininterface.port.einvoice.RegistrationAlertNotifier;
-import com.sg.domaininterface.port.in.PartyRegistrationLookup;
+import com.sg.domaininterface.port.out.InvoicePayableStore;
+import com.sg.domaininterface.port.out.LifecycleEventPublisher;
+import com.sg.domaininterface.port.out.PartyRegistrationLookup;
+import com.sg.domaininterface.port.out.RegistrationAlertNotifier;
 import com.sg.mapper.einvoice.FeeTypeMatcher;
 import java.util.ArrayList;
 import java.util.List;

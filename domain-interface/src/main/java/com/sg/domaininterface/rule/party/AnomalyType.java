@@ -2,6 +2,8 @@ package com.sg.domaininterface.rule.party;
 
 
 
+
+
 /**
  * A defect detectable in a referential response.
  *

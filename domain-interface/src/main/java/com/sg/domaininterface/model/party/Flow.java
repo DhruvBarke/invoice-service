@@ -2,6 +2,12 @@ package com.sg.domaininterface.model.party;
 
 
 
+
+
+
+
+
+
 /**
  * Which direction a lookup serves.
  *

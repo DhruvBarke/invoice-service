@@ -9,21 +9,17 @@ import com.sg.domaininterface.port.out.QuarantineStore;
 import com.sg.domaininterface.rule.party.Anomaly;
 import com.sg.domaininterface.rule.party.AnomalyType;
 import com.sg.domaininterface.rule.party.Servability;
-import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -195,42 +191,6 @@ class QuarantineEdgePathsTest {
     void throwingNotifierIsSwallowed() {
       SafeNotify.publish(x -> { throw new IllegalStateException("SMTP down"); }, notification());
       // Reaching here without an exception is the assertion.
-    }
-  }
-
-  // ── QuarantinePoller ──────────────────────────────────────────────────────
-
-  @Nested
-  @DisplayName("QuarantinePoller")
-  class Poller {
-
-    @Test
-    @DisplayName("a full batch is still evicted, and the backlog is reported")
-    void fullBatchIsEvicted() throws Exception {
-      // 500 rows is the poller's batch ceiling; reaching it means more changes are waiting.
-      List<QuarantineRecord> full = new ArrayList<>(500);
-      for (int i = 0; i < 500; i++) {
-        full.add(new QuarantineRecord(1L, "SIREN", "key-" + i, "fp",
-            Set.of(AnomalyType.MISSING_SIRET), Servability.SERVABLE, null, null,
-            QuarantineStatus.CORRECTED, Instant.EPOCH, Instant.now(), null, null, null));
-      }
-
-      StubStore store = new StubStore() {
-        volatile boolean served;
-        @Override public List<QuarantineRecord> findChangedSince(Instant s, int limit) {
-          if (served) return List.of();
-          served = true;
-          return full;
-        }
-      };
-
-      CountDownLatch allEvicted = new CountDownLatch(500);
-      try (QuarantinePoller poller = new QuarantinePoller(store, Duration.ofMillis(30),
-          (ks, key) -> allEvicted.countDown())) {
-        poller.start();
-        assertTrue(allEvicted.await(5, TimeUnit.SECONDS),
-            "every row in a full batch must still be evicted");
-      }
     }
   }
 }

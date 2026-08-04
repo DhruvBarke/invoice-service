@@ -1,21 +1,5 @@
 package com.sg.jpa.adapter;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertNull;
-import static org.junit.jupiter.api.Assertions.assertSame;
-import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyInt;
-import static org.mockito.ArgumentMatchers.contains;
-import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.times;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
-
 import com.sg.domaininterface.model.einvoice.Business;
 import com.sg.domaininterface.model.einvoice.error.ErrorCode;
 import com.sg.domaininterface.model.einvoice.error.LifecycleEventType;
@@ -25,8 +9,8 @@ import com.sg.domaininterface.model.payableinvoice.InvoiceDocumentPayable;
 import com.sg.domaininterface.model.payableinvoice.InvoiceItem;
 import com.sg.domaininterface.model.payableinvoice.InvoicePayable;
 import com.sg.domaininterface.model.payableinvoice.InvoicePayableModel;
-import com.sg.domaininterface.port.einvoice.InvoicePayableStore.PersistRequest;
-import com.sg.domaininterface.port.einvoice.LifecycleEventPublisher.PendingLifecycleEvent;
+import com.sg.domaininterface.port.out.InvoicePayableStore.PersistRequest;
+import com.sg.domaininterface.port.out.LifecycleEventPublisher.PendingLifecycleEvent;
 import java.math.BigDecimal;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
@@ -43,6 +27,21 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.contains;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 /**
  * The statements this store issues and the parameters it binds.
@@ -595,7 +594,7 @@ class JdbcInvoicePayableStoreTest {
     // One class, two ports: the lifecycle columns live on the row this store writes, so
     // splitting them would mean two components writing the same table.
     assertSame(store, store);
-    assertTrue(store instanceof com.sg.domaininterface.port.einvoice.InvoicePayableStore);
-    assertTrue(store instanceof com.sg.domaininterface.port.einvoice.LifecycleEventPublisher);
+    assertTrue(store instanceof com.sg.domaininterface.port.out.InvoicePayableStore);
+    assertTrue(store instanceof com.sg.domaininterface.port.out.LifecycleEventPublisher);
   }
 }

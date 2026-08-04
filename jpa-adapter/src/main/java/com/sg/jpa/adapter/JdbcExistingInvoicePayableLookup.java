@@ -1,6 +1,6 @@
 package com.sg.jpa.adapter;
 
-import com.sg.domaininterface.port.einvoice.ExistingInvoicePayableLookup;
+import com.sg.domaininterface.port.out.ExistingInvoicePayableLookup;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
