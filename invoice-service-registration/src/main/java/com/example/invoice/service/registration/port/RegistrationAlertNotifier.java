@@ -7,6 +7,7 @@ import com.example.invoice.service.registration.error.RegistrationOutcome;
 import java.time.Instant;
 import java.util.List;
 import java.util.Objects;
+import java.util.UUID;
 
 /**
  * Port for sending a human-readable alert about a failed registration.
@@ -35,7 +36,7 @@ public interface RegistrationAlertNotifier {
    * @param occurredAt       when the outcome was decided
    */
   record RegistrationAlert(
-      Long invoicePayableId,
+      UUID invoicePayableId,
       String invoiceReference,
       Business business,
       EInvoiceMarker marker,

@@ -202,7 +202,7 @@ public final class EInvoiceFacadeMapper {
 
     model.setInvoicePayable(payable);
 
-    List<InvoiceItem> items = LineItemMapper.toInvoiceItems(inv.getInvoiceLine(), inv.getId());
+    List<InvoiceItem> items = LineItemMapper.toInvoiceItems(inv.getInvoiceLine());
     return new MappedResult(model, items);
   }
 

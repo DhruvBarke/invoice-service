@@ -9,6 +9,7 @@ import com.example.invoice.mapper.einvoice.MultipartExtractionService;
 import com.example.invoice.mapper.einvoice.MultipartExtractionService.ExtractedAttachment;
 import com.example.invoice.mapper.einvoice.model.invoice.Invoice;
 import com.example.invoice.mapper.einvoice.model.invoice.Party;
+import com.example.invoice.mapper.einvoice.model.payableinvoice.InvoiceDocumentPayable;
 import com.example.invoice.mapper.einvoice.model.payableinvoice.InvoiceItem;
 import com.example.invoice.mapper.einvoice.FeeTypeMatcher;
 import com.example.invoice.service.registration.error.ErrorCode;
@@ -131,47 +132,82 @@ class RegistrationBoundaryCasesTest {
   // ── PersistRequest normalisation ──────────────────────────────────────────
 
   @Test
-  @DisplayName("the persist request defaults its source and copies every collection")
+  @DisplayName("the persist request defaults its invoice flow and copies every collection")
   void persistRequestNormalisation() {
     List<InvoiceItem> mutableItems = new ArrayList<>();
     mutableItems.add(new InvoiceItem());
-    List<ExtractedAttachment> mutableJson = new ArrayList<>();
-    mutableJson.add(new ExtractedAttachment("a.pdf", new byte[] {1}, "application/pdf"));
+    List<InvoiceDocumentPayable> mutableDocs = new ArrayList<>();
+    mutableDocs.add(InvoiceDocumentPayable.builder().documentName("a.pdf").build());
 
-    InvoicePayableStore.PersistRequest blankSource = new InvoicePayableStore.PersistRequest(
-        Business.MARK, "F01", "CUSTODY", "   ", null, mutableItems, mutableJson, List.of(),
+    InvoicePayableStore.PersistRequest blankFlow = new InvoicePayableStore.PersistRequest(
+        Business.MARK, "F01", "CUSTODY", "   ", null, mutableItems, mutableDocs,
         RegistrationOutcome.decide(List.of()));
-    assertEquals("EINVOICE", blankSource.source(),
-        "a blank source is as good as absent — this pipeline only handles e-invoices");
+    assertEquals("EINVOICE", blankFlow.invoiceFlow(),
+        "a blank flow is as good as absent — this pipeline only handles e-invoices, and a row "
+            + "with no invoice_flow could not be told apart from a manual one");
 
     InvoicePayableStore.PersistRequest allNull = new InvoicePayableStore.PersistRequest(
-        Business.MARK, "F01", "CUSTODY", null, null, null, null, null,
+        Business.MARK, "F01", "CUSTODY", null, null, null, null,
         RegistrationOutcome.decide(List.of()));
-    assertEquals("EINVOICE", allNull.source());
+    assertEquals("EINVOICE", allNull.invoiceFlow());
     assertTrue(allNull.items().isEmpty(), "a null item list normalises to empty");
-    assertTrue(allNull.jsonAttachments().isEmpty());
-    assertTrue(allNull.multipartAttachments().isEmpty());
+    assertTrue(allNull.documents().isEmpty());
 
     mutableItems.clear();
-    mutableJson.clear();
-    assertEquals(1, blankSource.items().size(), "the request keeps its own copy");
-    assertEquals(1, blankSource.jsonAttachments().size());
+    mutableDocs.clear();
+    assertEquals(1, blankFlow.items().size(), "the request keeps its own copy");
+    assertEquals(1, blankFlow.documents().size());
   }
 
   @Test
-  @DisplayName("the two attachment channels stay distinct all the way to the row")
-  void attachmentChannelsStayDistinct() {
-    ExtractedAttachment fromBody = new ExtractedAttachment("body.pdf", new byte[] {1}, "application/pdf");
-    ExtractedAttachment fromUpload = new ExtractedAttachment("upload.csv", new byte[] {2}, "text/csv");
+  @DisplayName("the two document channels stay distinct all the way to the row")
+  void documentChannelsStayDistinct() {
+    ExtractedAttachment fromBody =
+        new ExtractedAttachment("body.pdf", new byte[] {1}, "application/pdf");
+    ExtractedAttachment fromUpload =
+        new ExtractedAttachment("upload.csv", new byte[] {2}, "text/csv");
 
-    InvoicePayableStore.PersistRequest req = new InvoicePayableStore.PersistRequest(
-        Business.MARK, "F01", "CUSTODY", "EINVOICE", null, List.of(),
-        List.of(fromBody), List.of(fromUpload), RegistrationOutcome.decide(List.of()));
+    MultipartExtractionService bodyOnly = new MultipartExtractionService() {
+      @Override public List<ExtractedAttachment> extract(Invoice invoice) {
+        return List.of(fromBody);
+      }
+    };
 
-    assertEquals("body.pdf", req.jsonAttachments().get(0).filename());
-    assertEquals("upload.csv", req.multipartAttachments().get(0).filename());
-    // "No attachment" reads very differently depending on which channel was empty, so the row
-    // has to be able to tell them apart after the fact.
+    Stubs.RecordingStore store = new Stubs.RecordingStore();
+    service(bodyOnly, store)
+        .register(Fixtures.loadInvoice("custody-with-lines.json"), List.of(fromUpload));
+
+    List<InvoiceDocumentPayable> docs = store.last.get().documents();
+    assertEquals(2, docs.size());
+
+    // "No attachment" reads very differently depending on which channel was empty, so
+    // incoming_line has to be able to tell them apart after the fact.
+    InvoiceDocumentPayable body = docs.stream()
+        .filter(d -> "EINVOICE_BODY".equals(d.getIncomingLine())).findFirst().orElseThrow();
+    InvoiceDocumentPayable upload = docs.stream()
+        .filter(d -> "MULTIPART".equals(d.getIncomingLine())).findFirst().orElseThrow();
+
+    assertEquals("body.pdf", body.getDocumentName());
+    assertEquals("PDF", body.getDocumentType());
+    assertEquals("upload.csv", upload.getDocumentName());
+    assertEquals("TRADE_FILE", upload.getDocumentType());
+
+    // Metadata only. The content belongs in SGDoc; sg_doc_id stays null until an uploader
+    // exists to fill it, and a null handle is the honest record of that.
+    assertNull(body.getSgDocId());
+    assertNull(upload.getSgDocId());
+  }
+
+  @Test
+  @DisplayName("the document type is read off the filename, and defaults to OTHER")
+  void documentTypeClassification() {
+    assertEquals("PDF", InvoiceRegistrationService.documentTypeOf("invoice.PDF"),
+        "the extension is matched case-insensitively");
+    assertEquals("TRADE_FILE", InvoiceRegistrationService.documentTypeOf("trades.csv"));
+    assertEquals("TRADE_FILE", InvoiceRegistrationService.documentTypeOf("trades.xlsx"));
+    assertEquals("OTHER", InvoiceRegistrationService.documentTypeOf("notes.txt"));
+    assertEquals("OTHER", InvoiceRegistrationService.documentTypeOf(null),
+        "an unnamed attachment is still a document, so it classifies rather than throwing");
   }
 
   // ── Rule guards ───────────────────────────────────────────────────────────

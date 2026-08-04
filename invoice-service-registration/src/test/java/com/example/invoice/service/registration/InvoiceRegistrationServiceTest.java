@@ -125,13 +125,14 @@ class InvoiceRegistrationServiceTest {
       assertEquals("F01", req.feeId(), "the referential id must land on the row");
       assertEquals("CUSTODY", req.feeType());
       assertEquals(Business.MARK, req.business());
-      assertEquals("EINVOICE", req.source(), "this pipeline is e-invoice only");
+      assertEquals("EINVOICE", req.invoiceFlow(),
+          "invoice_flow is how the shared table records which producer wrote the row");
       assertNotNull(req.model());
       assertEquals("CUS0226368", req.model().getInvoicePayable().getProviderReference(),
-          "the e-invoice id is the supplier's reference");
-      assertNull(req.model().getInvoiceReference(),
-          "invoiceReference is minted by the store from seq_invoice_reference, so it is still "
-              + "null on the request the store receives");
+          "the e-invoice id is the supplier's reference, and what the duplicate check keys on");
+      assertEquals(Stubs.RecordingStore.INVOICE_REFERENCE, req.model().getInvoiceReference(),
+          "invoiceReference is minted by the store from seq_invoice_reference and written back "
+              + "onto the model, so anything running after persistence quotes the row's value");
     }
 
     @Test

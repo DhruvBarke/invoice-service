@@ -471,11 +471,12 @@ class EInvoiceMappersTest {
       q.setValue(new BigDecimal("2"));
       line.setInvoicedQuantity(q);
 
-      List<InvoiceItem> items = LineItemMapper.toInvoiceItems(List.of(line), "INV-1");
+      List<InvoiceItem> items = LineItemMapper.toInvoiceItems(List.of(line));
 
       assertEquals(1, items.size());
       assertNotNull(items.get(0).getInvoiceItemId());
-      assertEquals("INV-1", items.get(0).getInvReferenceSg());
+      assertNull(items.get(0).getInvReferenceSg(),
+          "left for the store, which stamps the reference it mints from the sequence");
       assertEquals(new BigDecimal("50.00"), items.get(0).getFeeAmount());
       assertEquals("EUR", items.get(0).getFeeCurrency());
       assertEquals("CUSTODY FEE", items.get(0).getItemDescription(),
@@ -489,12 +490,12 @@ class EInvoiceMappersTest {
     @Test
     @DisplayName("inbound tolerates a bare line and skips nulls in the list")
     void inboundIsNullSafe() {
-      assertTrue(LineItemMapper.toInvoiceItems(null, "INV-1").isEmpty());
+      assertTrue(LineItemMapper.toInvoiceItems(null).isEmpty());
 
       List<InvoiceLine> withNull = new java.util.ArrayList<>();
       withNull.add(null);
       withNull.add(new InvoiceLine());
-      List<InvoiceItem> items = LineItemMapper.toInvoiceItems(withNull, "INV-1");
+      List<InvoiceItem> items = LineItemMapper.toInvoiceItems(withNull);
 
       assertEquals(1, items.size(), "the null entry is skipped, the bare line still maps");
       assertNull(items.get(0).getFeeAmount());

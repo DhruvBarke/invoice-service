@@ -122,14 +122,24 @@ public final class LineItemMapper {
     return line;
   }
 
-  public static List<InvoiceItem> toInvoiceItems(List<InvoiceLine> lines, String parentReference) {
+  /**
+   * Build payable line items from inbound UBL lines.
+   *
+   * <p><b>{@code invReferenceSg} is deliberately left null.</b> That column is SG's own
+   * reference for the invoice, and SG's reference does not exist yet at mapping time — it is
+   * minted from {@code seq_invoice_reference} when the row is written, and stamped onto every
+   * item then. This used to be filled with the e-invoice's id, which is the supplier's
+   * reference: a value that is unique only within the supplier that issued it, sitting in a
+   * column whose whole purpose is to be SG's side of the correlation. Anything reading it
+   * between mapping and persistence got the wrong invoice's key.
+   */
+  public static List<InvoiceItem> toInvoiceItems(List<InvoiceLine> lines) {
     List<InvoiceItem> items = new ArrayList<>();
     if (lines == null) return items;
     for (InvoiceLine line : lines) {
       if (line == null) continue;
       InvoiceItem item = new InvoiceItem();
       item.setInvoiceItemId(UUID.randomUUID());
-      item.setInvReferenceSg(parentReference);
       CurrencyAmount lea = line.getLineExtensionAmount();
       if (lea != null) {
         item.setFeeAmount(lea.getValue());

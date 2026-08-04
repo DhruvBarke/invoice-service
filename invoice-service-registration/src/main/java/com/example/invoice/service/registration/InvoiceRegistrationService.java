@@ -7,6 +7,7 @@ import com.example.invoice.mapper.einvoice.FeeTypeMatcher.FeeTypeMatch;
 import com.example.invoice.mapper.einvoice.MultipartExtractionService;
 import com.example.invoice.mapper.einvoice.MultipartExtractionService.ExtractedAttachment;
 import com.example.invoice.mapper.einvoice.model.invoice.Invoice;
+import com.example.invoice.mapper.einvoice.model.payableinvoice.InvoiceDocumentPayable;
 import com.example.invoice.service.registration.error.ErrorCode;
 import com.example.invoice.service.registration.error.MappingError;
 import com.example.invoice.service.registration.error.RegistrationOutcome;
@@ -23,7 +24,9 @@ import com.example.invoice.service.domain.port.in.PartyRegistrationUnavailableEx
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.Objects;
+import java.util.UUID;
 
 /**
  * Orchestrator for e-invoice → InvoicePayable registration.
@@ -75,8 +78,17 @@ public final class InvoiceRegistrationService {
   private static final System.Logger LOG =
       System.getLogger(InvoiceRegistrationService.class.getName());
 
-  /** The only source this pipeline handles. Manual / SGAI registrations bypass it entirely. */
-  static final String SOURCE_EINVOICE = "EINVOICE";
+  /**
+   * The only producer this pipeline is. Written to {@code t_invoice_payable.invoice_flow}, the
+   * column shared with manual capture and SGAi — which is what makes "e-invoicing only" a
+   * question the data can answer. Manual / SGAi registrations bypass this service entirely.
+   */
+  static final String INVOICE_FLOW_EINVOICE = "EINVOICE";
+
+  /** {@code incoming_line} values: which channel carried the document. */
+  static final String LINE_EINVOICE_BODY = "EINVOICE_BODY";
+
+  static final String LINE_MULTIPART = "MULTIPART";
 
   private final EInvoiceFacadeMapper facadeMapper;
   private final FeeTypeMatcher feeTypeMatcher;
@@ -127,7 +139,7 @@ public final class InvoiceRegistrationService {
         mapped.model(), mapped.items(), jsonAttachments, mp), marker, errors);
 
     RegistrationOutcome outcome = RegistrationOutcome.decide(errors);
-    long rowId = persist(marker, feeMatch, mapped, jsonAttachments, mp, outcome);
+    UUID rowId = persist(marker, feeMatch, mapped, jsonAttachments, mp, outcome);
 
     publishLifecycle(outcome, rowId, eInvoice, errors);
     sendAlert(outcome, rowId, eInvoice, marker);
@@ -243,11 +255,10 @@ public final class InvoiceRegistrationService {
   /**
    * Step 8 — the rows are always written, success or failure.
    *
-   * <p>Both attachment channels travel through so the documents table records which side
-   * carried each file. The store mints {@code invoiceReference} and writes it back onto the
-   * model, so the alert and the lifecycle payload quote the value the row actually has.
+   * <p>The store mints {@code invoiceReference} and writes it back onto the model, its items and
+   * its documents, so the alert and the lifecycle payload quote the value the row actually has.
    */
-  private long persist(EInvoiceMarker marker, FeeTypeMatch feeMatch, MappedResult mapped,
+  private UUID persist(EInvoiceMarker marker, FeeTypeMatch feeMatch, MappedResult mapped,
                        List<ExtractedAttachment> jsonAttachments,
                        List<ExtractedAttachment> multipartAttachments,
                        RegistrationOutcome outcome) {
@@ -255,16 +266,73 @@ public final class InvoiceRegistrationService {
         marker.business(),
         feeMatch == null ? null : feeMatch.feeId(),
         feeMatch == null ? marker.feeType() : feeMatch.feeType(),
-        SOURCE_EINVOICE,
+        INVOICE_FLOW_EINVOICE,
         mapped.model(),
         mapped.items(),
-        jsonAttachments,
-        multipartAttachments,
+        toDocuments(jsonAttachments, multipartAttachments, outcome),
         outcome));
   }
 
+  /**
+   * Turn both attachment channels into document rows.
+   *
+   * <p><b>Metadata only — the bytes stop here.</b> Content belongs in SGDoc, and
+   * {@code sgDocId} is left null because nothing in this service uploads it yet. A row with a
+   * null handle is the honest record that the document arrived and its content is not yet
+   * retrievable; inventing a handle, or dropping the row because there is no handle, would both
+   * lose that.
+   *
+   * <p>The two channels stay distinguishable in {@code incoming_line} all the way to the row.
+   * "No attachment" reads very differently depending on whether the sender embedded nothing or
+   * the upload alongside the request was empty, and the attachment rules key on that difference.
+   */
+  private static List<InvoiceDocumentPayable> toDocuments(
+      List<ExtractedAttachment> jsonAttachments,
+      List<ExtractedAttachment> multipartAttachments,
+      RegistrationOutcome outcome) {
+
+    List<InvoiceDocumentPayable> documents =
+        new ArrayList<>(jsonAttachments.size() + multipartAttachments.size());
+    for (ExtractedAttachment a : jsonAttachments) {
+      documents.add(toDocument(a, LINE_EINVOICE_BODY, outcome));
+    }
+    for (ExtractedAttachment a : multipartAttachments) {
+      documents.add(toDocument(a, LINE_MULTIPART, outcome));
+    }
+    return documents;
+  }
+
+  private static InvoiceDocumentPayable toDocument(ExtractedAttachment a, String incomingLine,
+                                                   RegistrationOutcome outcome) {
+    return InvoiceDocumentPayable.builder()
+        .documentName(a.filename())
+        .documentType(documentTypeOf(a.filename()))
+        .format(a.mimeType())
+        .incomingLine(incomingLine)
+        .registrationType(INVOICE_FLOW_EINVOICE)
+        // Whether the invoice this document belongs to registered cleanly. A document attached
+        // to a refused invoice is still a document worth keeping, and this is what says so.
+        .registrationStatus(!outcome.hasErrors())
+        .build();
+  }
+
+  /** Which kind of attachment this is, so the trade-file rule's verdict is legible afterwards. */
+  static String documentTypeOf(String filename) {
+    if (filename == null) {
+      return "OTHER";
+    }
+    String lower = filename.toLowerCase(Locale.ROOT);
+    if (lower.endsWith(".pdf")) {
+      return "PDF";
+    }
+    if (lower.endsWith(".csv") || lower.endsWith(".xlsx")) {
+      return "TRADE_FILE";
+    }
+    return "OTHER";
+  }
+
   /** Step 9 — queue the REFUSED / SUSPENDED event, when the outcome carries one. */
-  private void publishLifecycle(RegistrationOutcome outcome, long rowId,
+  private void publishLifecycle(RegistrationOutcome outcome, UUID rowId,
                                 Invoice eInvoice, List<MappingError> errors) {
     if (outcome.lifecycleEvent() == null) {
       return;
@@ -281,7 +349,7 @@ public final class InvoiceRegistrationService {
   }
 
   /** Step 10 — one comprehensive alert per failed invoice. */
-  private void sendAlert(RegistrationOutcome outcome, long rowId,
+  private void sendAlert(RegistrationOutcome outcome, UUID rowId,
                          Invoice eInvoice, EInvoiceMarker marker) {
     if (!outcome.hasErrors()) {
       return;

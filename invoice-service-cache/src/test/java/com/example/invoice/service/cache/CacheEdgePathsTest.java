@@ -17,8 +17,10 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.CyclicBarrier;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.AfterEach;
@@ -412,39 +414,53 @@ class CacheEdgePathsTest {
 
   // ── StringPool concurrent insert ──────────────────────────────────────────
 
+  /**
+   * Threads interning the same brand-new value must all come away with one instance.
+   *
+   * <p><b>Why this runs many rounds instead of one.</b> The interesting path is the
+   * {@code putIfAbsent} loser: a thread that read the pool, found nothing, and by the time it
+   * wrote had been beaten to it. Nothing forces that interleaving — a single round can finish
+   * with the first thread far enough ahead that every other one takes the fast read path and the
+   * loser arm never executes. That is not a passing test proving anything; it is a test that
+   * happened to miss. Rounds of a fresh value with a barrier release make the collision
+   * reliable, and each round is a real assertion in its own right.
+   *
+   * <p>A fresh value per round matters: reusing one would be answered from the pool after the
+   * first round and every later round would exercise nothing.
+   */
   @Test
-  @DisplayName("two threads interning the same new value converge on one instance")
+  @DisplayName("threads interning the same new value converge on one instance")
   void concurrentInternConvergesOnOneInstance() throws Exception {
-    StringPool pool = new StringPool(1000);
     int threads = 16;
-    CountDownLatch start = new CountDownLatch(1);
-    List<String> results = java.util.Collections.synchronizedList(new ArrayList<>());
-    List<Thread> workers = new ArrayList<>();
+    int rounds = 200;
+    StringPool pool = new StringPool(rounds * 2);
+    ExecutorService workers = Executors.newFixedThreadPool(threads);
 
-    for (int i = 0; i < threads; i++) {
-      Thread t = new Thread(() -> {
-        try {
-          start.await(5, TimeUnit.SECONDS);
-        } catch (InterruptedException e) {
-          Thread.currentThread().interrupt();
+    try {
+      for (int round = 0; round < rounds; round++) {
+        String value = "12345" + round;
+        CyclicBarrier gate = new CyclicBarrier(threads);
+        List<Future<String>> futures = new ArrayList<>(threads);
+
+        for (int i = 0; i < threads; i++) {
+          futures.add(workers.submit(() -> {
+            gate.await(5, TimeUnit.SECONDS);
+            // A fresh instance per thread, so only the pool can make them identical.
+            return pool.canonicalize(new String(value));
+          }));
         }
-        // A fresh instance per thread, so only the pool can make them identical.
-        results.add(pool.canonicalize(new String("123456789")));
-      });
-      workers.add(t);
-      t.start();
+
+        String first = futures.get(0).get(5, TimeUnit.SECONDS);
+        for (Future<String> f : futures) {
+          assertSame(first, f.get(5, TimeUnit.SECONDS),
+              "the putIfAbsent loser must adopt the winner's instance, or dedup silently fails");
+        }
+      }
+    } finally {
+      workers.shutdownNow();
     }
 
-    start.countDown();
-    for (Thread t : workers) {
-      t.join(5000);
-    }
-
-    assertEquals(threads, results.size());
-    String first = results.get(0);
-    assertTrue(results.stream().allMatch(r -> r == first),
-        "the putIfAbsent loser must adopt the winner's instance, or dedup silently fails");
-    assertEquals(1, pool.size());
+    assertEquals(rounds, pool.size(), "one pooled instance per distinct value, and no more");
   }
 
   @Test

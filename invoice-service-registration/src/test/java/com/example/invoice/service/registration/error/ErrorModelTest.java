@@ -17,6 +17,7 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.EnumSet;
 import java.util.List;
+import java.util.UUID;
 import java.util.Set;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -368,14 +369,19 @@ class ErrorModelTest {
     @Test
     @DisplayName("PendingLifecycleEvent fills in a missing timestamp and demands the essentials")
     void pendingLifecycleEvent() {
+      UUID rowId = UUID.randomUUID();
       PendingLifecycleEvent e = new PendingLifecycleEvent(
-          1L, "INV1", LifecycleEventType.REFUSED, "DOUBLON", "dup", null);
+          rowId, "INV1", LifecycleEventType.REFUSED, "DOUBLON", "dup", null);
       assertNotNull(e.occurredAt());
 
+      // The row id is the only way back to the invoice this event belongs to. An event with
+      // none could be queued but never matched to anything, so it is rejected at construction.
       assertThrows(NullPointerException.class, () -> new PendingLifecycleEvent(
-          1L, "INV1", null, "DOUBLON", "c", Instant.now()));
+          null, "INV1", LifecycleEventType.REFUSED, "DOUBLON", "c", Instant.now()));
       assertThrows(NullPointerException.class, () -> new PendingLifecycleEvent(
-          1L, "INV1", LifecycleEventType.REFUSED, null, "c", Instant.now()));
+          rowId, "INV1", null, "DOUBLON", "c", Instant.now()));
+      assertThrows(NullPointerException.class, () -> new PendingLifecycleEvent(
+          rowId, "INV1", LifecycleEventType.REFUSED, null, "c", Instant.now()));
     }
 
     @Test
@@ -387,7 +393,7 @@ class ErrorModelTest {
 
       RegistrationAlertNotifier.RegistrationAlert alert =
           new RegistrationAlertNotifier.RegistrationAlert(
-              7L, "INV1", Business.MARK, marker, outcome, null);
+              UUID.randomUUID(), "INV1", Business.MARK, marker, outcome, null);
 
       assertNotNull(alert.occurredAt());
       assertEquals(1, alert.errors().size());
@@ -395,10 +401,10 @@ class ErrorModelTest {
 
       assertThrows(NullPointerException.class,
           () -> new RegistrationAlertNotifier.RegistrationAlert(
-              7L, "INV1", Business.MARK, marker, null, null));
+              UUID.randomUUID(), "INV1", Business.MARK, marker, null, null));
       assertThrows(NullPointerException.class,
           () -> new RegistrationAlertNotifier.RegistrationAlert(
-              7L, "INV1", Business.MARK, null, outcome, null));
+              UUID.randomUUID(), "INV1", Business.MARK, null, outcome, null));
     }
 
     @Test

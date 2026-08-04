@@ -327,7 +327,10 @@ class EInvoiceFacadeMapperTest {
 
       MappedResult result = mapper().toInvoicePayable(inv);
       assertEquals(1, result.items().size());
-      assertEquals("CUS0226368", result.items().get(0).getInvReferenceSg());
+      assertNull(result.items().get(0).getInvReferenceSg(),
+          "inv_reference_sg is SG's reference for the invoice, and SG has not minted one yet — "
+              + "the store stamps it. Filling it with the e-invoice id here would put the "
+              + "supplier's reference in SG's column.");
       assertEquals(new BigDecimal("626.54"), result.items().get(0).getFeeAmount());
     }
 

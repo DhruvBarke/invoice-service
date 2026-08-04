@@ -1,45 +1,57 @@
 package com.example.invoice.config;
 
-import com.example.invoice.mapper.einvoice.MultipartExtractionService.ExtractedAttachment;
+import com.example.invoice.mapper.einvoice.model.payableinvoice.InvoiceDocumentPayable;
 import com.example.invoice.mapper.einvoice.model.payableinvoice.InvoiceItem;
+import com.example.invoice.mapper.einvoice.model.payableinvoice.InvoicePayableModel;
 import com.example.invoice.service.registration.error.LifecycleEventType;
 import com.example.invoice.service.registration.error.MappingError;
 import com.example.invoice.service.registration.port.InvoicePayableStore;
 import com.example.invoice.service.registration.port.LifecycleEventPublisher;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import java.math.BigDecimal;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
-import java.sql.Statement;
 import java.sql.Timestamp;
 import java.sql.Types;
-import java.time.Instant;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
+import java.util.UUID;
 import javax.sql.DataSource;
 
 /**
- * Plain-JDBC persistence across the three invoice-payable tables.
+ * Plain-JDBC persistence across the three shared invoice-payable tables.
  *
  * <p><b>Three tables, one correlation key.</b> {@code t_invoice_payable} holds the envelope with
- * the {@code InvoicePayable} as a JSON column; {@code t_invoice_item} holds the lines;
- * {@code t_invoice_documents} holds the attachments. They correlate on
- * {@code invoice_reference} and are not joined by foreign keys — see
+ * the {@code InvoicePayable} as a jsonb column; {@code t_invoice_items} holds the lines, keyed
+ * back by {@code inv_reference_sg}; {@code t_invoice_document_payable} holds document metadata.
+ * They correlate on {@code invoice_reference} and are not foreign-keyed — see
  * {@code V2__invoice_payable.sql} for why.
  *
- * <p><b>The invoice reference is minted here.</b> {@code seq_invoice_reference} supplies it, not
- * the incoming e-invoice: the e-invoice's own id is unique only within the supplier that issued
- * it, and is stored as {@code provider_reference} instead. The mapper deliberately leaves
- * {@code InvoicePayableModel.invoiceReference} null for exactly this reason, so this class fills
- * it in and hands the value back on the returned {@link PersistedInvoice}.
+ * <p><b>These tables are shared.</b> Manual capture and SGAi write the same rows. Every column
+ * this class writes that no other producer knows about lives in
+ * {@code V3__einvoice_registration_columns.sql} and is nullable, so nothing here constrains what
+ * they can store. {@code invoice_flow} records which producer wrote the row.
  *
- * <p>All three inserts run in one transaction. They are not FK-joined, but a half-written
+ * <p><b>Keys are generated in Java, not by the database.</b> The entities use Hibernate's
+ * {@code uuid2} generator, so the columns are plain {@code uuid} with no default. Minting them
+ * here means no {@code RETURN_GENERATED_KEYS} round-trip and the id is known before the insert
+ * runs, which is what lets the items and documents be stamped in the same pass.
+ *
+ * <p><b>{@code invoice_reference} comes from a sequence.</b> Not from the incoming e-invoice:
+ * that id is the supplier's own reference, unique only within the supplier that issued it. It is
+ * stored as {@code provider_reference}, which is what the duplicate check keys on. The mapper
+ * deliberately leaves {@code InvoicePayableModel.invoiceReference} null for this reason; this
+ * class fills it in and writes it back onto the model, its items and its documents.
+ *
+ * <p>All three inserts run in one transaction. They are not foreign-keyed, but a half-written
  * registration — an envelope with no lines, or lines with no envelope — is a state no reader
  * expects, and it costs nothing to avoid it here.
  *
@@ -48,41 +60,101 @@ import javax.sql.DataSource;
  */
 public final class JdbcInvoicePayableStore implements InvoicePayableStore, LifecycleEventPublisher {
 
+  /**
+   * Prefix applied to the sequence value to form {@code invoice_reference}.
+   *
+   * <p>References elsewhere in the system look like {@code "CUS0226368"} — a short alphabetic
+   * prefix and a zero-padded number. Whether e-invoicing rows are meant to carry a prefix, and
+   * what it should be, is unconfirmed, so this is empty and references come out as bare padded
+   * digits. This is the one line to change if a prefix is required.
+   */
+  static final String REFERENCE_PREFIX = "";
+
+  /** Width of the numeric part. Wide enough that the sequence will not outgrow it. */
+  private static final String REFERENCE_FORMAT = "%010d";
+
   private static final String NEXT_REFERENCE_SQL =
-      "SELECT NEXT VALUE FOR seq_invoice_reference";
+      "SELECT nextval('publicinvoice.seq_invoice_reference')";
 
   private static final String INSERT_MODEL_SQL = """
-      INSERT INTO t_invoice_payable (
-          invoice_reference, provider_reference,
-          business, feetype, fee_id, sg_entity, provider_id,
-          invoice_status, comment,
-          invoice_payable_json, error_codes,
-          source, created_at, updated_at
-      ) VALUES (?,?, ?,?,?,?,?, ?,?, ?,?, ?,?,?)
+      INSERT INTO publicinvoice.t_invoice_payable (
+          id, invoice_reference,
+          sg_entity, fee_category, provider_id,
+          invoice_payable,
+          created_date, last_updated_date, created_by_user, last_updated_by_user,
+          invoice_date, trading_start_date, trading_end_date,
+          ref_cpty_id, invoice_type, invoice_status,
+          amount, currency, isdeleted, invoice_flow,
+          provider_reference, business, fee_id, fee_type,
+          registration_comment, registration_errors
+      ) VALUES (
+          ?, ?,
+          ?, ?, ?,
+          ?::jsonb,
+          ?, ?, ?, ?,
+          ?, ?, ?,
+          ?, ?, ?,
+          ?, ?, ?, ?,
+          ?, ?, ?, ?,
+          ?, ?::jsonb
+      )
       """;
 
   private static final String INSERT_ITEM_SQL = """
-      INSERT INTO t_invoice_item (
-          invoice_reference, invoice_item_id, description,
-          fee_type, fee_amount, fee_currency, notion_quantity,
-          grouping_key, nature_of_expense, created_at, updated_at
-      ) VALUES (?,?,?, ?,?,?,?, ?,?,?,?)
+      INSERT INTO publicinvoice.t_invoice_items (
+          invoice_item_id, inv_reference_sg,
+          fee_type, grouping_key, nature_of_expense, account_number, product,
+          notional_quantity, fee_amount, fee_currency,
+          provider_rate, exchanged_rate, exchanged_amount, exchanged_amount_currency,
+          vat_amount, vat_amount_currency, debit_credit,
+          items_creation_date, items_creation_user,
+          items_last_update_date, items_last_update_user,
+          item_description, market_region, fee_agreement, business,
+          traded_currency, traded_amount, fx_rate
+      ) VALUES (
+          ?, ?,
+          ?, ?, ?, ?, ?,
+          ?, ?, ?,
+          ?, ?, ?, ?,
+          ?, ?, ?,
+          ?, ?,
+          ?, ?,
+          ?, ?, ?, ?,
+          ?, ?, ?
+      )
       """;
 
   private static final String INSERT_DOCUMENT_SQL = """
-      INSERT INTO t_invoice_documents (
-          invoice_reference, filename, mime_type, document_type,
-          source_channel, size_bytes, content, created_at
-      ) VALUES (?,?,?,?, ?,?,?,?)
+      INSERT INTO publicinvoice.t_invoice_document_payable (
+          id, invoice_reference, sg_doc_id,
+          document_name, document_type, format,
+          incoming_line, sender_address, arrival_time,
+          document_reference, document_status,
+          registration_status, registration_type,
+          subject, body, comment,
+          created_by, isdeleted,
+          created_date, last_updated_date, last_updated_by_user,
+          parser_id, parser_response, parser_source
+      ) VALUES (
+          ?, ?, ?,
+          ?, ?, ?,
+          ?, ?, ?,
+          ?, ?,
+          ?, ?,
+          ?, ?, ?,
+          ?, ?,
+          ?, ?, ?,
+          ?, ?, ?
+      )
       """;
 
   private static final String UPDATE_LIFECYCLE_SQL = """
-      UPDATE t_invoice_payable
+      UPDATE publicinvoice.t_invoice_payable
          SET lifecycle_event_type   = ?,
              lifecycle_reason_code  = ?,
              lifecycle_event_status = 'PENDING',
-             lifecycle_payload      = ?,
-             updated_at             = ?
+             lifecycle_payload      = ?::jsonb,
+             last_updated_date      = ?
        WHERE id = ?
       """;
 
@@ -98,21 +170,20 @@ public final class JdbcInvoicePayableStore implements InvoicePayableStore, Lifec
   // ── InvoicePayableStore ───────────────────────────────────────────────────
 
   @Override
-  public long persist(PersistRequest req) {
-    Instant now = Instant.now();
+  public UUID persist(PersistRequest req) {
+    LocalDate today = LocalDate.now();
+    LocalDateTime now = LocalDateTime.now();
+    UUID id = UUID.randomUUID();
+
     try (Connection c = dataSource.getConnection()) {
       c.setAutoCommit(false);
       try {
         String invoiceReference = nextInvoiceReference(c);
-        // Hand the minted reference back to the caller's model so anything downstream of
-        // persistence — the alert, the lifecycle payload — quotes the same value the row has.
-        if (req.model() != null) {
-          req.model().setInvoiceReference(invoiceReference);
-        }
+        stampReference(req, id, invoiceReference);
 
-        long id = insertModel(c, req, invoiceReference, now);
-        insertItems(c, req.items(), invoiceReference, now);
-        insertDocuments(c, req, invoiceReference, now);
+        insertModel(c, req, id, invoiceReference, today);
+        insertItems(c, req.items(), invoiceReference, today);
+        insertDocuments(c, req.documents(), invoiceReference, now);
 
         c.commit();
         return id;
@@ -127,139 +198,202 @@ public final class JdbcInvoicePayableStore implements InvoicePayableStore, Lifec
     }
   }
 
+  /**
+   * Write the minted identity back onto the caller's objects.
+   *
+   * <p>Not cosmetic: the alert, the lifecycle payload and anything else that runs after
+   * persistence read these off the model, and quoting a reference the row does not have is
+   * worse than quoting none.
+   */
+  private static void stampReference(PersistRequest req, UUID id, String invoiceReference) {
+    if (req.model() != null) {
+      req.model().setId(id);
+      req.model().setInvoiceReference(invoiceReference);
+    }
+    for (InvoiceItem item : req.items()) {
+      item.setInvReferenceSg(invoiceReference);
+    }
+    for (InvoiceDocumentPayable doc : req.documents()) {
+      doc.setInvoiceReference(invoiceReference);
+    }
+  }
+
   private String nextInvoiceReference(Connection c) throws SQLException {
     try (PreparedStatement ps = c.prepareStatement(NEXT_REFERENCE_SQL);
          ResultSet rs = ps.executeQuery()) {
       if (!rs.next()) {
         throw new PersistenceException("seq_invoice_reference returned no value", null);
       }
-      return String.valueOf(rs.getLong(1));
+      return REFERENCE_PREFIX + String.format(REFERENCE_FORMAT, rs.getLong(1));
     }
   }
 
-  private long insertModel(Connection c, PersistRequest req, String invoiceReference, Instant now)
-      throws SQLException {
-    try (PreparedStatement ps =
-             c.prepareStatement(INSERT_MODEL_SQL, Statement.RETURN_GENERATED_KEYS)) {
+  private void insertModel(Connection c, PersistRequest req, UUID id, String invoiceReference,
+                           LocalDate today) throws SQLException {
+    InvoicePayableModel m = req.model();
 
-      String providerReference = req.model() != null && req.model().getInvoicePayable() != null
-          ? req.model().getInvoicePayable().getProviderReference() : null;
+    try (PreparedStatement ps = c.prepareStatement(INSERT_MODEL_SQL)) {
+      int i = 1;
+      ps.setObject(i++, id);
+      ps.setString(i++, invoiceReference);
 
-      ps.setString(1, invoiceReference);
-      ps.setString(2, providerReference);
-      ps.setString(3, req.business() == null ? null : req.business().name());
-      ps.setString(4, req.feeType());
-      ps.setString(5, req.feeId());
-      ps.setString(6, req.model() == null ? null : req.model().getSgEntity());
-      ps.setString(7, req.model() == null ? null : req.model().getProviderId());
-      ps.setString(8, req.outcome().status().name());
-      ps.setString(9, truncate(req.outcome().comment(), 1024));
-      ps.setString(10, nullSafeJson(req.model() == null ? null : req.model().getInvoicePayable()));
-      ps.setString(11, toJson(serialiseErrors(req.outcome().errors())));
-      ps.setString(12, req.source());
-      ps.setTimestamp(13, Timestamp.from(now));
-      ps.setTimestamp(14, Timestamp.from(now));
+      ps.setString(i++, m == null ? null : m.getSgEntity());
+      ps.setString(i++, m == null ? null : m.getFeeCategory());
+      ps.setString(i++, m == null ? null : m.getProviderId());
+
+      // NOT NULL on the column: an absent payable stores an empty object rather than
+      // failing the whole registration, because the row is still the record that this
+      // invoice arrived and could not be mapped.
+      ps.setString(i++, nullSafeJson(m == null ? null : m.getInvoicePayable()));
+
+      setDate(ps, i++, today);
+      setDate(ps, i++, today);
+      ps.setString(i++, m == null ? null : m.getCreatedByUser());
+      ps.setString(i++, m == null ? null : m.getLastUpdatedByUser());
+
+      setDate(ps, i++, m == null ? null : m.getInvoiceDate());
+      setDate(ps, i++, m == null ? null : m.getTradingStartDate());
+      setDate(ps, i++, m == null ? null : m.getTradingEndDate());
+
+      ps.setString(i++, m == null ? null : m.getRefCptyId());
+      ps.setString(i++, m == null ? null : m.getInvoiceType());
+      ps.setString(i++, req.outcome().status().name());
+
+      setDecimal(ps, i++, m == null ? null : m.getAmount());
+      ps.setString(i++, m == null ? null : m.getCurrency());
+      ps.setBoolean(i++, m != null && m.isDeleted());
+      ps.setString(i++, req.invoiceFlow());
+
+      ps.setString(i++, providerReferenceOf(m));
+      ps.setString(i++, req.business() == null ? null : req.business().name());
+      ps.setString(i++, req.feeId());
+      ps.setString(i++, req.feeType());
+
+      ps.setString(i++, req.outcome().comment());
+      ps.setString(i, toJson(serialiseErrors(req.outcome().errors())));
 
       ps.executeUpdate();
-      try (ResultSet keys = ps.getGeneratedKeys()) {
-        if (!keys.next()) {
-          throw new PersistenceException("insert into t_invoice_payable returned no key", null);
-        }
-        return keys.getLong(1);
-      }
     }
+  }
+
+  private static String providerReferenceOf(InvoicePayableModel m) {
+    return m == null || m.getInvoicePayable() == null
+        ? null
+        : m.getInvoicePayable().getProviderReference();
   }
 
   private void insertItems(Connection c, List<InvoiceItem> items, String invoiceReference,
-                           Instant now) throws SQLException {
+                           LocalDate today) throws SQLException {
     if (items.isEmpty()) {
       return;
     }
     try (PreparedStatement ps = c.prepareStatement(INSERT_ITEM_SQL)) {
       for (InvoiceItem item : items) {
-        ps.setString(1, invoiceReference);
-        ps.setString(2, item.getInvoiceItemId() == null ? null : item.getInvoiceItemId().toString());
-        ps.setString(3, truncate(item.getItemDescription(), 512));
-        ps.setString(4, item.getFeeType());
-        setBigDecimal(ps, 5, item.getFeeAmount());
-        ps.setString(6, item.getFeeCurrency());
-        setBigDecimal(ps, 7, item.getNotionQuantity());
-        ps.setString(8, item.getGroupingKey());
-        ps.setString(9, item.getNatureOfExpense());
-        ps.setTimestamp(10, Timestamp.from(now));
-        ps.setTimestamp(11, Timestamp.from(now));
+        int i = 1;
+        ps.setObject(i++, item.getInvoiceItemId() == null ? UUID.randomUUID()
+            : item.getInvoiceItemId());
+        ps.setString(i++, invoiceReference);
+
+        ps.setString(i++, item.getFeeType());
+        ps.setString(i++, item.getGroupingKey());
+        ps.setString(i++, item.getNatureOfExpense());
+        ps.setString(i++, item.getAccountNumber());
+        ps.setString(i++, item.getProduct());
+
+        setDecimal(ps, i++, item.getNotionQuantity());
+        setDecimal(ps, i++, item.getFeeAmount());
+        ps.setString(i++, item.getFeeCurrency());
+
+        setDecimal(ps, i++, item.getProviderRate());
+        setDecimal(ps, i++, item.getExchangedRate());
+        setDecimal(ps, i++, item.getExchangedAmount());
+        ps.setString(i++, item.getExchangedAmountCurrency());
+
+        setDecimal(ps, i++, item.getVatAmount());
+        ps.setString(i++, item.getVatAmountCurrency());
+        ps.setString(i++, item.getDebitCredit());
+
+        setDate(ps, i++, item.getItemsCreationDate() == null ? today
+            : item.getItemsCreationDate());
+        ps.setString(i++, item.getItemsCreationUser());
+        setDate(ps, i++, item.getItemsLastUpdateDate() == null ? today
+            : item.getItemsLastUpdateDate());
+        ps.setString(i++, item.getItemsLastUpdateUser());
+
+        ps.setString(i++, item.getItemDescription());
+        ps.setString(i++, item.getMarketRegion());
+        ps.setString(i++, item.getFeeAgreement());
+        ps.setString(i++, item.getBusiness());
+
+        ps.setString(i++, item.getTradedCurrency());
+        ps.setString(i++, item.getTradedAmount());
+        ps.setString(i, item.getFxRate());
+
         ps.addBatch();
       }
       ps.executeBatch();
     }
   }
 
-  private void insertDocuments(Connection c, PersistRequest req, String invoiceReference,
-                               Instant now) throws SQLException {
-    List<DocumentRow> rows = new ArrayList<>();
-    for (ExtractedAttachment a : req.jsonAttachments()) {
-      rows.add(new DocumentRow(a, "EINVOICE_BODY"));
-    }
-    for (ExtractedAttachment a : req.multipartAttachments()) {
-      rows.add(new DocumentRow(a, "MULTIPART"));
-    }
-    if (rows.isEmpty()) {
+  private void insertDocuments(Connection c, List<InvoiceDocumentPayable> documents,
+                               String invoiceReference, LocalDateTime now) throws SQLException {
+    if (documents.isEmpty()) {
       return;
     }
-
     try (PreparedStatement ps = c.prepareStatement(INSERT_DOCUMENT_SQL)) {
-      for (DocumentRow row : rows) {
-        ExtractedAttachment a = row.attachment();
-        ps.setString(1, invoiceReference);
-        ps.setString(2, truncate(a.filename(), 256));
-        ps.setString(3, a.mimeType());
-        ps.setString(4, documentTypeOf(a.filename()));
-        ps.setString(5, row.channel());
-        if (a.bytes() == null) {
-          ps.setNull(6, Types.BIGINT);
-          ps.setNull(7, Types.BLOB);
-        } else {
-          ps.setLong(6, a.bytes().length);
-          ps.setBytes(7, a.bytes());
-        }
-        ps.setTimestamp(8, Timestamp.from(now));
+      for (InvoiceDocumentPayable d : documents) {
+        int i = 1;
+        ps.setObject(i++, d.getId() == null ? UUID.randomUUID() : d.getId());
+        ps.setString(i++, invoiceReference);
+        // Null until SGDoc has the content. The row still records that the document arrived.
+        ps.setString(i++, d.getSgDocId());
+
+        ps.setString(i++, truncate(d.getDocumentName(), 512));
+        ps.setString(i++, d.getDocumentType());
+        ps.setString(i++, truncate(d.getFormat(), 128));
+
+        ps.setString(i++, d.getIncomingLine());
+        ps.setString(i++, truncate(d.getSenderAddress(), 256));
+        ps.setString(i++, d.getArrivalTime());
+
+        ps.setString(i++, truncate(d.getDocumentReference(), 128));
+        ps.setString(i++, d.getDocumentStatus());
+
+        setBoolean(ps, i++, d.getRegistrationStatus());
+        ps.setString(i++, d.getRegistrationType());
+
+        ps.setString(i++, d.getSubject());
+        ps.setString(i++, d.getBody());
+        ps.setString(i++, d.getComment());
+
+        ps.setString(i++, d.getActionPerformedBy());
+        ps.setBoolean(i++, d.isDeleted());
+
+        setTimestamp(ps, i++, d.getCreatedDate() == null ? now : d.getCreatedDate());
+        setTimestamp(ps, i++, d.getLastUpdatedDate() == null ? now : d.getLastUpdatedDate());
+        ps.setString(i++, d.getLastUpdatedByUser());
+
+        ps.setString(i++, d.getParserId());
+        ps.setString(i++, d.getParserResponse());
+        ps.setString(i, d.getParserSource());
+
         ps.addBatch();
       }
       ps.executeBatch();
     }
   }
-
-  /** Which attachment this is, so the trade-file rule's verdict is legible after the fact. */
-  static String documentTypeOf(String filename) {
-    if (filename == null) {
-      return "OTHER";
-    }
-    String lower = filename.toLowerCase(Locale.ROOT);
-    if (lower.endsWith(".pdf")) {
-      return "PDF";
-    }
-    if (lower.endsWith(".csv") || lower.endsWith(".xlsx")) {
-      return "TRADE_FILE";
-    }
-    return "OTHER";
-  }
-
-  private record DocumentRow(ExtractedAttachment attachment, String channel) {}
 
   // ── LifecycleEventPublisher ───────────────────────────────────────────────
 
   @Override
   public void publish(PendingLifecycleEvent event) {
-    if (event.type() == null) {
-      return;
-    }
     try (Connection c = dataSource.getConnection();
          PreparedStatement ps = c.prepareStatement(UPDATE_LIFECYCLE_SQL)) {
       ps.setString(1, event.type().name());
       ps.setString(2, event.reasonCode());
       ps.setString(3, toJson(serialiseLifecycle(event)));
-      ps.setTimestamp(4, Timestamp.from(event.occurredAt()));
-      ps.setLong(5, event.invoicePayableId());
+      setDate(ps, 4, LocalDate.now());
+      ps.setObject(5, event.invoicePayableId());
       if (ps.executeUpdate() == 0) {
         throw new PersistenceException(
             "lifecycle update matched no row (id=" + event.invoicePayableId() + ")", null);
@@ -271,12 +405,39 @@ public final class JdbcInvoicePayableStore implements InvoicePayableStore, Lifec
 
   // ── Helpers ───────────────────────────────────────────────────────────────
 
-  private static void setBigDecimal(PreparedStatement ps, int index, java.math.BigDecimal value)
+  private static void setDecimal(PreparedStatement ps, int index, BigDecimal value)
       throws SQLException {
     if (value == null) {
       ps.setNull(index, Types.DECIMAL);
     } else {
       ps.setBigDecimal(index, value);
+    }
+  }
+
+  private static void setDate(PreparedStatement ps, int index, LocalDate value)
+      throws SQLException {
+    if (value == null) {
+      ps.setNull(index, Types.DATE);
+    } else {
+      ps.setObject(index, value);
+    }
+  }
+
+  private static void setTimestamp(PreparedStatement ps, int index, LocalDateTime value)
+      throws SQLException {
+    if (value == null) {
+      ps.setNull(index, Types.TIMESTAMP);
+    } else {
+      ps.setTimestamp(index, Timestamp.valueOf(value));
+    }
+  }
+
+  private static void setBoolean(PreparedStatement ps, int index, Boolean value)
+      throws SQLException {
+    if (value == null) {
+      ps.setNull(index, Types.BOOLEAN);
+    } else {
+      ps.setBoolean(index, value);
     }
   }
 
@@ -321,7 +482,7 @@ public final class JdbcInvoicePayableStore implements InvoicePayableStore, Lifec
 
   static Map<String, Object> serialiseLifecycle(PendingLifecycleEvent e) {
     Map<String, Object> row = new LinkedHashMap<>();
-    row.put("invoicePayableId", e.invoicePayableId());
+    row.put("invoicePayableId", e.invoicePayableId().toString());
     row.put("invoiceReference", e.invoiceReference());
     row.put("type", e.type().name());
     row.put("cdarCode", e.type().cdarCode());

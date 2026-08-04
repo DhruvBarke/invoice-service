@@ -10,6 +10,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.UUID;
 import java.util.concurrent.atomic.AtomicReference;
 
 /**
@@ -75,15 +76,30 @@ public final class Stubs {
     return new FeeTypeMatcher(() -> ref);
   }
 
-  /** Records the last persist request and hands back a fixed row id. */
+  /**
+   * Records the last persist request and hands back a fixed row id.
+   *
+   * <p>Mints an {@code invoiceReference} onto the model, the items and the documents exactly as
+   * {@code JdbcInvoicePayableStore} does. Without that, this stub would quietly diverge from the
+   * port's documented contract, and a test asserting on the reference after registration would
+   * be testing the stub's silence rather than the pipeline's behaviour.
+   */
   public static final class RecordingStore implements InvoicePayableStore {
-    public static final long ROW_ID = 42L;
+    public static final UUID ROW_ID = UUID.fromString("00000000-0000-0000-0000-000000000042");
+    public static final String INVOICE_REFERENCE = "0000001000";
+
     public final AtomicReference<PersistRequest> last = new AtomicReference<>();
     public int calls;
 
-    @Override public long persist(PersistRequest request) {
+    @Override public UUID persist(PersistRequest request) {
       last.set(request);
       calls++;
+      if (request.model() != null) {
+        request.model().setId(ROW_ID);
+        request.model().setInvoiceReference(INVOICE_REFERENCE);
+      }
+      request.items().forEach(i -> i.setInvReferenceSg(INVOICE_REFERENCE));
+      request.documents().forEach(d -> d.setInvoiceReference(INVOICE_REFERENCE));
       return ROW_ID;
     }
   }

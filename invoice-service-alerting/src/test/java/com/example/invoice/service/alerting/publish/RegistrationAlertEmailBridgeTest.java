@@ -15,6 +15,7 @@ import com.example.invoice.service.registration.port.RegistrationAlertNotifier.R
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -34,8 +35,10 @@ class RegistrationAlertEmailBridgeTest {
   private static final EInvoiceMarker MARKER = new EInvoiceMarker(
       "552120222", Business.MARK, "CUSTODY", "552120222_MARK_CUSTODY");
 
+  private static final UUID ROW_ID = UUID.fromString("00000000-0000-0000-0000-000000000042");
+
   private static RegistrationAlert alert(RegistrationOutcome outcome) {
-    return new RegistrationAlert(42L, "CUS0226368", Business.MARK, MARKER, outcome, Instant.EPOCH);
+    return new RegistrationAlert(ROW_ID, "CUS0226368", Business.MARK, MARKER, outcome, Instant.EPOCH);
   }
 
   private static CapturingPort send(RegistrationOutcome outcome) {
@@ -186,7 +189,7 @@ class RegistrationAlertEmailBridgeTest {
           MappingError.of(ErrorCode.DUPLICATE_INVOICE, "invoice already exists"))))
           .sent.get(0).body();
 
-      assertTrue(body.contains("Row id            : 42"), "ops opens the row by id");
+      assertTrue(body.contains("Row id            : " + ROW_ID), "ops opens the row by id");
       assertTrue(body.contains("CUS0226368"));
       assertTrue(body.contains("552120222_MARK_CUSTODY"));
       assertTrue(body.contains("552120222"));

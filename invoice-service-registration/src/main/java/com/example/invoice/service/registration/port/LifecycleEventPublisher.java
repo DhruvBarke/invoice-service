@@ -3,6 +3,7 @@ package com.example.invoice.service.registration.port;
 import com.example.invoice.service.registration.error.LifecycleEventType;
 import java.time.Instant;
 import java.util.Objects;
+import java.util.UUID;
 
 /**
  * Port for recording a lifecycle event that needs to be delivered back to the e-invoice-service.
@@ -28,7 +29,7 @@ public interface LifecycleEventPublisher {
   void publish(PendingLifecycleEvent event);
 
   /**
-   * @param invoicePayableId the DB id of the {@code t_invoice_payable} row
+   * @param invoicePayableId the {@code t_invoice_payable} primary key
    * @param invoiceReference the human-facing invoice ref (echoed into the outbound event)
    * @param type             REFUSED or SUSPENDED
    * @param reasonCode       matching einvoice-service {@code t_reason_code_status} seed
@@ -37,7 +38,7 @@ public interface LifecycleEventPublisher {
    * @param occurredAt       when the failure was decided
    */
   record PendingLifecycleEvent(
-      long invoicePayableId,
+      UUID invoicePayableId,
       String invoiceReference,
       LifecycleEventType type,
       String reasonCode,
@@ -45,6 +46,7 @@ public interface LifecycleEventPublisher {
       Instant occurredAt) {
 
     public PendingLifecycleEvent {
+      Objects.requireNonNull(invoicePayableId, "invoicePayableId");
       Objects.requireNonNull(type, "type");
       Objects.requireNonNull(reasonCode, "reasonCode");
       if (occurredAt == null) occurredAt = Instant.now();
