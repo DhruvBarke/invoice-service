@@ -6,28 +6,41 @@
 
     <modelVersion>4.0.0</modelVersion>
 
-    <groupId>com.example.invoice</groupId>
+    <groupId>com.sg</groupId>
     <artifactId>invoice-service-parent</artifactId>
     <version>1.0.0-SNAPSHOT</version>
     <packaging>pom</packaging>
     <name>Invoice Service (parent)</name>
 
     <!--
-      NOTE ON PLACEMENT
-      These modules are designed to live as SIBLINGS inside the existing invoice-service repo.
-      If you are adopting them there, delete this parent pom and instead add the four <module>
-      entries plus the <dependencyManagement> block below to the invoice-service parent pom.
-      A standalone repo works too, but then invoice-mapper and invoice-service-app must consume
-      published artifacts rather than reactor modules.
+      MODULE LAYOUT
+
+      Six modules, matching the invoice-service repo this is migrating into, so a module here
+      lands on the module of the same name there rather than being unpicked first.
+
+        domain-interface  models, ports (repository + service interfaces). No dependencies.
+        domain            service implementations: the registration use case, the validation
+                          rules, the party cache, quarantine and alert publishing.
+        mapper            transformation only, held apart from domain for the same reason
+                          e-invoicing-service holds transformation-engine apart: mapping is
+                          independently testable and must not acquire orchestration.
+        jpa-adapter       entities and the adapters that implement the repository ports.
+        rest-adapter      controllers, as an interface plus its implementation.
+        bootstrap         the Spring Boot application class and all configuration.
+
+      Every module depends on domain-interface and, apart from bootstrap, on nothing else in
+      this build. Adapters meet at ports in domain-interface, never by importing one another.
+      The bannedDependencies rules in each module enforce that.
     -->
 
     <modules>
         <module>build-tools/readme-doclet</module>
-        <module>invoice-service-domain</module>
-        <module>invoice-service-cache</module>
-        <module>invoice-service-alerting</module>
-        <module>invoice-mapper</module>
-        <module>invoice-service-app</module>
+        <module>domain-interface</module>
+        <module>domain</module>
+        <module>mapper</module>
+        <module>jpa-adapter</module>
+        <module>rest-adapter</module>
+        <module>bootstrap</module>
     </modules>
 
     <properties>
@@ -38,29 +51,69 @@
         <jacoco.version>0.8.12</jacoco.version>
         <mockito.version>5.14.2</mockito.version>
         <lombok.version>1.18.30</lombok.version>
+        <jackson.version>2.17.2</jackson.version>
     </properties>
 
     <dependencyManagement>
         <dependencies>
             <dependency>
                 <groupId>${project.groupId}</groupId>
-                <artifactId>invoice-service-domain</artifactId>
+                <artifactId>domain-interface</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>
                 <groupId>${project.groupId}</groupId>
-                <artifactId>invoice-service-cache</artifactId>
+                <artifactId>domain</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>
                 <groupId>${project.groupId}</groupId>
-                <artifactId>invoice-service-alerting</artifactId>
+                <artifactId>mapper</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>
                 <groupId>${project.groupId}</groupId>
-                <artifactId>invoice-mapper</artifactId>
+                <artifactId>jpa-adapter</artifactId>
                 <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>${project.groupId}</groupId>
+                <artifactId>rest-adapter</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <!--
+              Spring and Jackson versions managed here rather than in each module. Three modules
+              now take them; without this each names its own version, and the first mismatch
+              surfaces as a NoSuchMethodError at runtime instead of a conflict at build time.
+
+              Pinned artifact by artifact rather than by importing spring-boot-dependencies: the
+              BOM is a separate download, and a build that cannot run offline is one more thing
+              between a new checkout and a green build.
+            -->
+            <dependency>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-starter</artifactId>
+                <version>${spring-boot.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-starter-jdbc</artifactId>
+                <version>${spring-boot.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-starter-web</artifactId>
+                <version>${spring-boot.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.fasterxml.jackson.core</groupId>
+                <artifactId>jackson-databind</artifactId>
+                <version>${jackson.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.fasterxml.jackson.datatype</groupId>
+                <artifactId>jackson-datatype-jsr310</artifactId>
+                <version>${jackson.version}</version>
             </dependency>
             <dependency>
                 <groupId>org.junit.jupiter</groupId>
@@ -192,8 +245,32 @@
                 </executions>
                 <configuration>
                     <excludes>
+                        <!--
+                          Lombok-generated accessors on the model. Lombok marks them
+                          @Generated and JaCoCo skips those natively; this is belt and braces
+                          for anything hand-written that sits beside them.
+                        -->
                         <exclude>**/model/**</exclude>
+
+                        <!--
+                          The composition root. These are @Bean methods that hand one object to
+                          another; there is no behaviour to assert that would not just restate
+                          the wiring. What proves them is the application starting, which is an
+                          integration concern rather than a unit one.
+
+                          Worth being clear about the cost: a mis-wired bean is NOT caught by
+                          this build. It is caught the first time the context loads.
+                        -->
                         <exclude>**/config/**</exclude>
+
+                        <!--
+                          The Spring Boot entry point: a class declaration and a main() that
+                          calls SpringApplication.run. "Testing" it means starting the whole
+                          application to watch a one-line delegation, and the assertion would be
+                          that Spring works.
+                        -->
+                        <exclude>**/*Application.class</exclude>
+
                         <exclude>**/package-info.class</exclude>
                     </excludes>
                 </configuration>

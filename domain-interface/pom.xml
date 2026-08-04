@@ -1,0 +1,75 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0
+                             http://maven.apache.org/xsd/maven-4.0.0.xsd">
+
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>com.sg</groupId>
+        <artifactId>invoice-service-parent</artifactId>
+        <version>1.0.0-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>domain-interface</artifactId>
+    <name>Invoice Service :: Domain Interface</name>
+    <description>Models, repository ports and service interfaces. The one module every other may depend on.</description>
+
+    <dependencies>
+        <dependency>
+            <groupId>org.projectlombok</groupId>
+            <artifactId>lombok</artifactId>
+            <scope>provided</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-enforcer-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <id>enforce-zero-dependencies</id>
+                        <goals><goal>enforce</goal></goals>
+                        <configuration>
+                            <rules>
+                                <bannedDependencies>
+                                    <searchTransitive>true</searchTransitive>
+                                    <excludes><exclude>*:*</exclude></excludes>
+                                    <includes>
+                                        <!--
+                                          Lombok, named explicitly and at provided scope only. It
+                                          is erased at compile time so it reaches no consumer;
+                                          the same coordinates at compile scope WOULD ship, and
+                                          that distinction is the point of the exception.
+                                        -->
+                                        <include>org.projectlombok:lombok:*:*:provided</include>
+                                        <include>org.junit.jupiter:*:*:*:test</include>
+                                        <include>org.junit.platform:*:*:*:test</include>
+                                        <include>org.opentest4j:*:*:*:test</include>
+                                        <include>org.apiguardian:*:*:*:test</include>
+                                    </includes>
+                                    <message>
+                                        domain-interface must have NO compile or runtime
+                                        dependencies. Every other module compiles against this
+                                        one, so anything added here lands transitively in all of
+                                        them. A DataSource, a Spring context or an HTTP client
+                                        reaching this pom is what the modules getting tangled
+                                        again looks like six months from now.
+                                    </message>
+                                </bannedDependencies>
+                            </rules>
+                            <fail>true</fail>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
+</project>

@@ -1,0 +1,130 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0
+                             http://maven.apache.org/xsd/maven-4.0.0.xsd">
+
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>com.sg</groupId>
+        <artifactId>invoice-service-parent</artifactId>
+        <version>1.0.0-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>domain</artifactId>
+    <name>Invoice Service :: Domain</name>
+    <description>Service implementations: the registration use case, validation rules, party cache, quarantine and alert publishing.</description>
+
+    <dependencies>
+        <dependency>
+            <groupId>${project.groupId}</groupId>
+            <artifactId>domain-interface</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.projectlombok</groupId>
+            <artifactId>lombok</artifactId>
+            <scope>provided</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.mockito</groupId>
+            <artifactId>mockito-core</artifactId>
+            <version>${mockito.version}</version>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-enforcer-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <id>enforce-module-boundary</id>
+                        <goals><goal>enforce</goal></goals>
+                        <configuration>
+                            <rules>
+                                <bannedDependencies>
+                                    <searchTransitive>true</searchTransitive>
+                                    <excludes>
+                                        <!--
+                                          Sibling modules banned by pattern, not by name. An
+                                          earlier version of this rule listed the modules that
+                                          existed when it was written, which is exactly how a
+                                          dependency on a later one appeared without objection.
+                                          A pattern cannot go stale that way.
+                                        -->
+                                        <exclude>${project.groupId}:*</exclude>
+                                    </excludes>
+                                    <includes>
+                                        <include>${project.groupId}:domain-interface</include>
+                                    </includes>
+                                    <message>
+                                        domain holds service implementations and may depend on
+                                        domain-interface only. It must not reach for an adapter:
+                                        a use case that imports jpa-adapter cannot be exercised
+                                        without a database, including in its own tests.
+                                    </message>
+                                </bannedDependencies>
+                            </rules>
+                            <fail>true</fail>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+
+            <!--
+              THE ONE MODULE WITH A COVERAGE FLOOR BELOW 100%.
+
+              EmailAlertPublisher batches alerts on a ScheduledExecutorService. Its catch blocks
+              are there because an exception escaping a scheduled task permanently cancels every
+              future run of it — the alerting would go silent and nothing would say so. Reaching
+              those arms in a test means making a send fail at a specific point mid-flight, and
+              the versions of that test worth having need a real transport to fail against.
+
+              16 lines and 3 branches, all of them in that class. The alternative was a test that
+              fakes reaching them and proves nothing, so the number is honest instead. If the
+              gap grows, it is not this class and the floor should not be moved to accommodate
+              it.
+
+              (Inherited from the module this code lived in before the restructure, where it was
+              measured against the same 16 lines.)
+            -->
+            <plugin>
+                <groupId>org.jacoco</groupId>
+                <artifactId>jacoco-maven-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <id>check-coverage</id>
+                        <phase>verify</phase>
+                        <goals><goal>check</goal></goals>
+                        <configuration>
+                            <rules>
+                                <rule>
+                                    <element>BUNDLE</element>
+                                    <limits>
+                                        <limit>
+                                            <counter>LINE</counter>
+                                            <value>COVEREDRATIO</value>
+                                            <minimum>0.98</minimum>
+                                        </limit>
+                                        <limit>
+                                            <counter>BRANCH</counter>
+                                            <value>COVEREDRATIO</value>
+                                            <minimum>0.98</minimum>
+                                        </limit>
+                                    </limits>
+                                </rule>
+                            </rules>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
+</project>
