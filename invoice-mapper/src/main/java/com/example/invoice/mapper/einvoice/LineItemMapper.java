@@ -1,11 +1,11 @@
 package com.example.invoice.mapper.einvoice;
 
-import com.example.invoice.mapper.einvoice.model.invoice.CurrencyAmount;
-import com.example.invoice.mapper.einvoice.model.invoice.InvoiceLine;
-import com.example.invoice.mapper.einvoice.model.invoice.Item;
-import com.example.invoice.mapper.einvoice.model.invoice.Price;
-import com.example.invoice.mapper.einvoice.model.invoice.Quantity;
-import com.example.invoice.mapper.einvoice.model.payableinvoice.InvoiceItem;
+import com.example.invoice.service.domain.model.invoice.CurrencyAmount;
+import com.example.invoice.service.domain.model.invoice.InvoiceLine;
+import com.example.invoice.service.domain.model.invoice.Item;
+import com.example.invoice.service.domain.model.invoice.Price;
+import com.example.invoice.service.domain.model.invoice.Quantity;
+import com.example.invoice.service.domain.model.payableinvoice.InvoiceItem;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.ArrayList;

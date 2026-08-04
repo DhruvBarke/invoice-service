@@ -1,9 +1,0 @@
-package com.example.invoice.mapper.einvoice.model.invoice;
-
-import lombok.*;
-
-@Data @Builder @NoArgsConstructor @AllArgsConstructor
-public class OrderLineRef {
-    private String lineId;
-    private String salesOrderLineId;
-}

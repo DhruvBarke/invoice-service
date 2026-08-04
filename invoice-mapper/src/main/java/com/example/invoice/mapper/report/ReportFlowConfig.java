@@ -7,7 +7,7 @@ import lombok.NoArgsConstructor;
 import lombok.ToString;
 
 /**
- * Per-environment configuration for the {@link com.example.invoice.mapper.report.model.ReportModel}
+ * Per-environment configuration for the {@link com.example.invoice.service.domain.model.report.ReportModel}
  * build pipeline. Holds the values that don't sit on {@code InvoicePayable} but are still needed
  * to compose a valid Flux 10 transmission (PA platform identity, default business process,
  * default transmission type).

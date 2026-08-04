@@ -2,16 +2,16 @@ package com.example.invoice.mapper.einvoice;
 
 import static com.example.invoice.mapper.einvoice.Constant.*;
 
-import com.example.invoice.mapper.einvoice.model.invoice.AccountingCustomerParty;
-import com.example.invoice.mapper.einvoice.model.invoice.AccountingSupplierParty;
-import com.example.invoice.mapper.einvoice.model.invoice.CodedValue;
-import com.example.invoice.mapper.einvoice.model.invoice.Country;
-import com.example.invoice.mapper.einvoice.model.invoice.Party;
-import com.example.invoice.mapper.einvoice.model.invoice.PartyLegalEntity;
-import com.example.invoice.mapper.einvoice.model.invoice.PartyTaxScheme;
-import com.example.invoice.mapper.einvoice.model.invoice.PostalAddress;
-import com.example.invoice.mapper.einvoice.model.invoice.SchemeID;
-import com.example.invoice.mapper.einvoice.model.invoice.TaxSchemeRef;
+import com.example.invoice.service.domain.model.invoice.AccountingCustomerParty;
+import com.example.invoice.service.domain.model.invoice.AccountingSupplierParty;
+import com.example.invoice.service.domain.model.invoice.CodedValue;
+import com.example.invoice.service.domain.model.invoice.Country;
+import com.example.invoice.service.domain.model.invoice.Party;
+import com.example.invoice.service.domain.model.invoice.PartyLegalEntity;
+import com.example.invoice.service.domain.model.invoice.PartyTaxScheme;
+import com.example.invoice.service.domain.model.invoice.PostalAddress;
+import com.example.invoice.service.domain.model.invoice.SchemeID;
+import com.example.invoice.service.domain.model.invoice.TaxSchemeRef;
 import java.util.List;
 
 /**

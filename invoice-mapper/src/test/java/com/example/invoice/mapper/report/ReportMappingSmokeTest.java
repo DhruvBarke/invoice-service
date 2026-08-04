@@ -5,10 +5,10 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import com.example.invoice.mapper.einvoice.model.payableinvoice.InvoiceItem;
-import com.example.invoice.mapper.einvoice.model.payableinvoice.InvoicePayable;
-import com.example.invoice.mapper.einvoice.model.payableinvoice.InvoicePayableModel;
-import com.example.invoice.mapper.report.model.ReportModel;
+import com.example.invoice.service.domain.model.payableinvoice.InvoiceItem;
+import com.example.invoice.service.domain.model.payableinvoice.InvoicePayable;
+import com.example.invoice.service.domain.model.payableinvoice.InvoicePayableModel;
+import com.example.invoice.service.domain.model.report.ReportModel;
 import com.example.invoice.service.domain.model.PartyRegistrationDetails;
 import com.example.invoice.service.domain.port.in.PartyRegistrationLookup;
 import java.math.BigDecimal;

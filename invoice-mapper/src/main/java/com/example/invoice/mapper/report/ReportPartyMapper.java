@@ -1,12 +1,12 @@
 package com.example.invoice.mapper.report;
 
-import com.example.invoice.mapper.report.model.Buyer;
-import com.example.invoice.mapper.report.model.Party;
-import com.example.invoice.mapper.report.model.PostalAddress;
-import com.example.invoice.mapper.report.model.QualifiedIdentifier;
-import com.example.invoice.mapper.report.model.SchemedIdentifier;
-import com.example.invoice.mapper.report.model.Seller;
-import com.example.invoice.mapper.report.model.UriUniversalCommunication;
+import com.example.invoice.service.domain.model.report.Buyer;
+import com.example.invoice.service.domain.model.report.Party;
+import com.example.invoice.service.domain.model.report.PostalAddress;
+import com.example.invoice.service.domain.model.report.QualifiedIdentifier;
+import com.example.invoice.service.domain.model.report.SchemedIdentifier;
+import com.example.invoice.service.domain.model.report.Seller;
+import com.example.invoice.service.domain.model.report.UriUniversalCommunication;
 import com.example.invoice.service.domain.model.PartyRegistrationDetails;
 import com.example.invoice.service.domain.port.in.PartyRegistrationLookup;
 import java.util.Optional;

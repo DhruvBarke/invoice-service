@@ -2,7 +2,7 @@ package com.example.invoice.mapper.einvoice;
 
 import static com.example.invoice.mapper.einvoice.Constant.*;
 
-import com.example.invoice.mapper.einvoice.model.invoice.CodedValue;
+import com.example.invoice.service.domain.model.invoice.CodedValue;
 
 /**
  * Maps between the einvoice UNTDID 1001 {@link CodedValue} on {@code Invoice.invoiceTypeCode}

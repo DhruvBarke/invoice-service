@@ -1,7 +1,7 @@
 package com.example.invoice.config;
 
-import com.example.invoice.mapper.einvoice.model.invoice.Invoice;
-import com.example.invoice.mapper.einvoice.model.invoice.NoteEntry;
+import com.example.invoice.service.domain.model.invoice.Invoice;
+import com.example.invoice.service.domain.model.invoice.NoteEntry;
 import com.fasterxml.jackson.annotation.JsonAutoDetect;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.PropertyAccessor;

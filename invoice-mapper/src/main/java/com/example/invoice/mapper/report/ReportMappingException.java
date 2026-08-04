@@ -2,7 +2,7 @@ package com.example.invoice.mapper.report;
 
 /**
  * Thrown when an InvoicePayable cannot be mapped to a Flux 10 {@link
- * com.example.invoice.mapper.report.model.ReportModel} — typically because mandatory data is
+ * com.example.invoice.service.domain.model.report.ReportModel} — typically because mandatory data is
  * missing on the source side (sgEntity SIREN, invoice reference, currency, amount) or because
  * the referential lookup for one of the parties failed.
  *

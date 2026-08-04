@@ -1,7 +1,7 @@
 package com.example.invoice.service.alerting.publish;
 
-import com.example.invoice.service.registration.error.MappingError;
-import com.example.invoice.service.registration.port.RegistrationAlertNotifier;
+import com.example.invoice.service.domain.einvoice.error.MappingError;
+import com.example.invoice.service.domain.einvoice.port.RegistrationAlertNotifier;
 import java.lang.System.Logger.Level;
 import java.time.format.DateTimeFormatter;
 import java.util.List;

@@ -1,9 +1,9 @@
 package com.example.invoice.mapper.einvoice;
 
-import com.example.invoice.mapper.einvoice.model.invoice.AdditionalDocumentReference;
-import com.example.invoice.mapper.einvoice.model.invoice.Attachment;
-import com.example.invoice.mapper.einvoice.model.invoice.EmbeddedDocument;
-import com.example.invoice.mapper.einvoice.model.invoice.SchemeID;
+import com.example.invoice.service.domain.model.invoice.AdditionalDocumentReference;
+import com.example.invoice.service.domain.model.invoice.Attachment;
+import com.example.invoice.service.domain.model.invoice.EmbeddedDocument;
+import com.example.invoice.service.domain.model.invoice.SchemeID;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Base64;

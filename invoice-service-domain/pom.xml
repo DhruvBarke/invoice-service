@@ -15,12 +15,22 @@
 
     <dependencies>
         <!--
-          DELIBERATELY EMPTY (test scope aside).
-          This is the property the whole structure rests on. invoice-mapper compiles against this
-          module alone; anything added here becomes a transitive dependency of the invoice mapper
-          facades and breaks their referential independence. The enforcer rule below turns a
-          well-meaning addition into a build failure rather than a discovery six months later.
+          NOTHING WITH A RUNTIME OF ITS OWN.
+          This is the hexagon: the invoice + party model, the ports, the rules and the
+          registration use case. Every other module compiles against this one and nothing else,
+          so anything added here lands transitively in all of them. A DataSource, a Spring
+          context or an HTTP client reaching this pom is what "the modules got tangled again"
+          looks like six months later, so the enforcer rule below fails the build instead.
+
+          Lombok is the one exception, and it is not a runtime dependency: it is provided-scope,
+          erased at compile time, and generates the accessors on the ~104 model classes. Writing
+          them by hand would be ~8k lines of boilerplate for no gain in independence.
         -->
+        <dependency>
+            <groupId>org.projectlombok</groupId>
+            <artifactId>lombok</artifactId>
+            <scope>provided</scope>
+        </dependency>
         <dependency>
             <groupId>org.junit.jupiter</groupId>
             <artifactId>junit-jupiter</artifactId>
@@ -42,6 +52,14 @@
                                     <searchTransitive>true</searchTransitive>
                                     <excludes><exclude>*:*</exclude></excludes>
                                     <includes>
+                                        <!--
+                                          Provided scope only, and named explicitly rather than
+                                          allowing org.projectlombok:* at any scope: Lombok is
+                                          erased at compile time so it reaches no consumer, but
+                                          the same coordinates at compile scope WOULD ship, and
+                                          the distinction is the entire point of the exception.
+                                        -->
+                                        <include>org.projectlombok:lombok:*:*:provided</include>
                                         <include>org.junit.jupiter:*:*:*:test</include>
                                         <include>org.junit.platform:*:*:*:test</include>
                                         <include>org.opentest4j:*:*:*:test</include>
@@ -49,9 +67,10 @@
                                     </includes>
                                     <message>
                                         invoice-service-domain must have NO compile or runtime
-                                        dependencies. invoice-mapper depends on this module alone;
-                                        anything added here leaks into the invoice facade beans and
-                                        destroys their referential independence.
+                                        dependencies. Every other module compiles against this one
+                                        alone, so anything added here leaks into all of them and
+                                        destroys their independence. Lombok is permitted at
+                                        provided scope only; it is erased at compile time.
                                     </message>
                                 </bannedDependencies>
                             </rules>

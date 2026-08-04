@@ -29,11 +29,7 @@
           pure orchestrator with no compile deps back on us, so this dependency edge stays
           adapter → port and doesn't loop.
         -->
-        <dependency>
-            <groupId>${project.groupId}</groupId>
-            <artifactId>invoice-service-registration</artifactId>
-        </dependency>
-
+        
         <!-- JDBC only; the DataSource is supplied by the application. -->
         <dependency>
             <groupId>jakarta.annotation</groupId>
@@ -133,13 +129,31 @@
                         <configuration>
                             <rules>
                                 <bannedDependencies>
+                                    <searchTransitive>true</searchTransitive>
                                     <excludes>
-                                        <exclude>${project.groupId}:invoice-service-cache</exclude>
+                                        <!--
+                                          Every sibling module, banned by pattern rather than by
+                                          name. The previous rule listed the two modules that
+                                          existed when it was written, which is why a dependency
+                                          on a third one was able to appear without objection —
+                                          an adapter reaching into the use-case module, backwards
+                                          through the hexagon, and nothing said so.
+
+                                          A pattern cannot go stale that way: a module added
+                                          tomorrow is banned here the day it exists, and making
+                                          it reachable is a deliberate edit to this file.
+                                        -->
+                                        <exclude>${project.groupId}:*</exclude>
                                     </excludes>
+                                    <includes>
+                                        <include>${project.groupId}:invoice-service-domain</include>
+                                    </includes>
                                     <message>
-                                        Alerting must not depend on the cache. Both are adapters and
-                                        meet only at ResponseGuard, a port in the domain. An adapter
-                                        depending on another adapter's module is backwards.
+                                        invoice-service-alerting is an adapter: it may depend on
+                                        invoice-service-domain and on nothing else in this build.
+                                        Adapters meet each other at ports in the domain, never by
+                                        importing one another. If you need a type from a sibling,
+                                        the type belongs in the domain.
                                     </message>
                                 </bannedDependencies>
                             </rules>

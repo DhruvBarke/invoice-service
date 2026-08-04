@@ -53,18 +53,31 @@
                         <configuration>
                             <rules>
                                 <bannedDependencies>
+                                    <searchTransitive>true</searchTransitive>
                                     <excludes>
                                         <!--
-                                          The arrow points alerting -> cache, never back. If the
-                                          cache depended on alerting, "run without alerting" would
-                                          become impossible and a DataSource would be a hard
-                                          requirement for a batch job or a test harness.
+                                          Every sibling module, banned by pattern rather than by
+                                          name. The previous rule listed the two modules that
+                                          existed when it was written, which is why a dependency
+                                          on a third one was able to appear without objection —
+                                          an adapter reaching into the use-case module, backwards
+                                          through the hexagon, and nothing said so.
+
+                                          A pattern cannot go stale that way: a module added
+                                          tomorrow is banned here the day it exists, and making
+                                          it reachable is a deliberate edit to this file.
                                         -->
-                                        <exclude>${project.groupId}:invoice-service-alerting</exclude>
+                                        <exclude>${project.groupId}:*</exclude>
                                     </excludes>
+                                    <includes>
+                                        <include>${project.groupId}:invoice-service-domain</include>
+                                    </includes>
                                     <message>
-                                        The cache must not depend on the alerting module. They meet
-                                        only at ResponseGuard, a port defined in the domain.
+                                        invoice-service-cache is an adapter: it may depend on
+                                        invoice-service-domain and on nothing else in this build.
+                                        Adapters meet each other at ports in the domain, never by
+                                        importing one another. If you need a type from a sibling,
+                                        the type belongs in the domain.
                                     </message>
                                 </bannedDependencies>
                             </rules>

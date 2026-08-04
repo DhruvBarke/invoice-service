@@ -1,6 +1,6 @@
 package com.example.invoice.config;
 
-import com.example.invoice.service.registration.Business;
+import com.example.invoice.service.domain.einvoice.Business;
 import java.util.EnumMap;
 import java.util.List;
 import java.util.Map;

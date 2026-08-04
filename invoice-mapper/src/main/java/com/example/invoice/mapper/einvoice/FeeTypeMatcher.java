@@ -124,9 +124,9 @@ public final class FeeTypeMatcher {
   /**
    * Legacy convenience: given the full composed marker string
    * {@code "<siren>_MARK_<FEETYPE>"}, extract the trailing fee-type portion and resolve it.
-   * New callers should parse the marker themselves (see
-   * {@code invoice-service-registration/EInvoiceMarkerParser}) and call {@link #resolveOrNull}
-   * with the extracted fee-type token directly.
+   * New callers should not need this: {@link EInvoiceMappingAdapter} parses the marker with
+   * {@code EInvoiceMarkerParser} (in the domain, since the marker is a domain concept) and
+   * calls {@link #resolveOrNull} with the extracted token.
    */
   public FeeTypeMatch resolveFromMarker(String composedMarker) {
     if (composedMarker == null || composedMarker.isBlank()) return null;

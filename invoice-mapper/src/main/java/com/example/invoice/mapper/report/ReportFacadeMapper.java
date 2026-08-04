@@ -1,13 +1,13 @@
 package com.example.invoice.mapper.report;
 
-import com.example.invoice.mapper.einvoice.model.payableinvoice.InvoiceItem;
-import com.example.invoice.mapper.einvoice.model.payableinvoice.InvoicePayableModel;
-import com.example.invoice.mapper.report.model.Invoice;
-import com.example.invoice.mapper.report.model.Report;
-import com.example.invoice.mapper.report.model.ReportDocument;
-import com.example.invoice.mapper.report.model.ReportModel;
-import com.example.invoice.mapper.report.model.ReportPeriod;
-import com.example.invoice.mapper.report.model.TransactionsReport;
+import com.example.invoice.service.domain.model.payableinvoice.InvoiceItem;
+import com.example.invoice.service.domain.model.payableinvoice.InvoicePayableModel;
+import com.example.invoice.service.domain.model.report.Invoice;
+import com.example.invoice.service.domain.model.report.Report;
+import com.example.invoice.service.domain.model.report.ReportDocument;
+import com.example.invoice.service.domain.model.report.ReportModel;
+import com.example.invoice.service.domain.model.report.ReportPeriod;
+import com.example.invoice.service.domain.model.report.TransactionsReport;
 import com.example.invoice.service.domain.port.in.PartyRegistrationLookup;
 import java.time.LocalDate;
 import java.time.LocalDateTime;

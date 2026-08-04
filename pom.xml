@@ -27,7 +27,6 @@
         <module>invoice-service-cache</module>
         <module>invoice-service-alerting</module>
         <module>invoice-mapper</module>
-        <module>invoice-service-registration</module>
         <module>invoice-service-app</module>
     </modules>
 
@@ -38,6 +37,7 @@
         <spring-boot.version>3.3.4</spring-boot.version>
         <jacoco.version>0.8.12</jacoco.version>
         <mockito.version>5.14.2</mockito.version>
+        <lombok.version>1.18.30</lombok.version>
     </properties>
 
     <dependencyManagement>
@@ -63,15 +63,22 @@
                 <version>${project.version}</version>
             </dependency>
             <dependency>
-                <groupId>${project.groupId}</groupId>
-                <artifactId>invoice-service-registration</artifactId>
-                <version>${project.version}</version>
-            </dependency>
-            <dependency>
                 <groupId>org.junit.jupiter</groupId>
                 <artifactId>junit-jupiter</artifactId>
                 <version>${junit.version}</version>
                 <scope>test</scope>
+            </dependency>
+            <!--
+              Managed centrally because two modules need it: the domain (for the model classes it
+              now owns) and the mapper. Two hardcoded versions drifting apart produces an
+              annotation processor that runs against one Lombok and links against another, which
+              surfaces as a missing generated method rather than as a version conflict.
+            -->
+            <dependency>
+                <groupId>org.projectlombok</groupId>
+                <artifactId>lombok</artifactId>
+                <version>${lombok.version}</version>
+                <scope>provided</scope>
             </dependency>
         </dependencies>
     </dependencyManagement>

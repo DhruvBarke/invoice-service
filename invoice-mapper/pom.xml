@@ -31,7 +31,6 @@
         <dependency>
             <groupId>org.projectlombok</groupId>
             <artifactId>lombok</artifactId>
-            <version>1.18.30</version>
             <scope>provided</scope>
         </dependency>
         <dependency>
@@ -55,23 +54,28 @@
                                     <searchTransitive>true</searchTransitive>
                                     <excludes>
                                         <!--
-                                          THIS RULE IS THE LOAD-BEARING PART OF THE ARCHITECTURE.
-                                          Sibling modules in one repository drift together within a
-                                          year if nothing objects, and the coupling stays invisible
-                                          until someone needs a DataSource to run a mapper unit test.
-                                          Run `mvn verify` on this module in CI, not just `mvn test`.
+                                          Every sibling module, banned by pattern rather than by
+                                          name. The previous rule listed the two modules that
+                                          existed when it was written, which is why a dependency
+                                          on a third one was able to appear without objection —
+                                          an adapter reaching into the use-case module, backwards
+                                          through the hexagon, and nothing said so.
+
+                                          A pattern cannot go stale that way: a module added
+                                          tomorrow is banned here the day it exists, and making
+                                          it reachable is a deliberate edit to this file.
                                         -->
-                                        <exclude>${project.groupId}:invoice-service-cache</exclude>
-                                        <exclude>${project.groupId}:invoice-service-alerting</exclude>
-                                        <exclude>${project.groupId}:third-parties</exclude>
-                                        <exclude>org.springframework:*</exclude>
-                                        <exclude>org.springframework.boot:*</exclude>
-                                        <exclude>javax.sql:*</exclude>
+                                        <exclude>${project.groupId}:*</exclude>
                                     </excludes>
+                                    <includes>
+                                        <include>${project.groupId}:invoice-service-domain</include>
+                                    </includes>
                                     <message>
-                                        invoice-mapper must depend on invoice-service-domain only.
-                                        Its facade beans must be constructible without a referential,
-                                        a database, an SMTP endpoint, or a Spring context.
+                                        invoice-mapper is an adapter: it may depend on
+                                        invoice-service-domain and on nothing else in this build.
+                                        Adapters meet each other at ports in the domain, never by
+                                        importing one another. If you need a type from a sibling,
+                                        the type belongs in the domain.
                                     </message>
                                 </bannedDependencies>
                             </rules>

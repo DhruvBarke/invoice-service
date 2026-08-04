@@ -1,10 +1,10 @@
 package com.example.invoice.mapper.einvoice;
 
 import com.example.invoice.mapper.einvoice.DocumentReferenceMapper.AttachmentPayload;
-import com.example.invoice.mapper.einvoice.MultipartExtractionService.ExtractedAttachment;
-import com.example.invoice.mapper.einvoice.model.invoice.Invoice;
-import com.example.invoice.mapper.einvoice.model.payableinvoice.InvoiceItem;
-import com.example.invoice.mapper.einvoice.model.payableinvoice.InvoicePayableModel;
+import com.example.invoice.service.domain.model.invoice.ExtractedAttachment;
+import com.example.invoice.service.domain.model.invoice.Invoice;
+import com.example.invoice.service.domain.model.payableinvoice.InvoiceItem;
+import com.example.invoice.service.domain.model.payableinvoice.InvoicePayableModel;
 import java.util.List;
 import java.util.Objects;
 

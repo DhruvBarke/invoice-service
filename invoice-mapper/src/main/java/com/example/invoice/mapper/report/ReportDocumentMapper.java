@@ -1,8 +1,8 @@
 package com.example.invoice.mapper.report;
 
-import com.example.invoice.mapper.einvoice.model.payableinvoice.InvoicePayableModel;
-import com.example.invoice.mapper.report.model.IssueDateTime;
-import com.example.invoice.mapper.report.model.ReportDocument;
+import com.example.invoice.service.domain.model.payableinvoice.InvoicePayableModel;
+import com.example.invoice.service.domain.model.report.IssueDateTime;
+import com.example.invoice.service.domain.model.report.ReportDocument;
 import com.example.invoice.service.domain.port.in.PartyRegistrationLookup;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
@@ -17,7 +17,7 @@ import java.time.format.DateTimeFormatter;
  * <ul>
  *   <li><b>{@code PartyReferentialClient} replaced by {@link PartyRegistrationLookup}.</b></li>
  *   <li><b>{@code Flux10DateSerde.DATE_TIME_FORMAT} inlined as {@link #DATE_TIME_FORMAT}.</b>
- *       {@link com.example.invoice.mapper.report.model.package-info} explains why
+ *       {@link com.example.invoice.service.domain.model.report.package-info} explains why
  *       {@code Flux10DateSerde} itself was omitted from the vendored model.</li>
  * </ul>
  *

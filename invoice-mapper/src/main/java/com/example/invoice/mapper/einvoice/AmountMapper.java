@@ -2,14 +2,14 @@ package com.example.invoice.mapper.einvoice;
 
 import static com.example.invoice.mapper.einvoice.Constant.*;
 
-import com.example.invoice.mapper.einvoice.model.invoice.CodedValue;
-import com.example.invoice.mapper.einvoice.model.invoice.CurrencyAmount;
-import com.example.invoice.mapper.einvoice.model.invoice.LegalMonetaryTotal;
-import com.example.invoice.mapper.einvoice.model.invoice.SchemeID;
-import com.example.invoice.mapper.einvoice.model.invoice.TaxCategory;
-import com.example.invoice.mapper.einvoice.model.invoice.TaxSchemeRef;
-import com.example.invoice.mapper.einvoice.model.invoice.TaxSubtotal;
-import com.example.invoice.mapper.einvoice.model.invoice.TaxTotal;
+import com.example.invoice.service.domain.model.invoice.CodedValue;
+import com.example.invoice.service.domain.model.invoice.CurrencyAmount;
+import com.example.invoice.service.domain.model.invoice.LegalMonetaryTotal;
+import com.example.invoice.service.domain.model.invoice.SchemeID;
+import com.example.invoice.service.domain.model.invoice.TaxCategory;
+import com.example.invoice.service.domain.model.invoice.TaxSchemeRef;
+import com.example.invoice.service.domain.model.invoice.TaxSubtotal;
+import com.example.invoice.service.domain.model.invoice.TaxTotal;
 import java.math.BigDecimal;
 import java.util.List;
 

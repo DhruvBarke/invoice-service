@@ -1,12 +1,12 @@
 package com.example.invoice.config;
 
-import com.example.invoice.mapper.einvoice.model.payableinvoice.InvoiceDocumentPayable;
-import com.example.invoice.mapper.einvoice.model.payableinvoice.InvoiceItem;
-import com.example.invoice.mapper.einvoice.model.payableinvoice.InvoicePayableModel;
-import com.example.invoice.service.registration.error.LifecycleEventType;
-import com.example.invoice.service.registration.error.MappingError;
-import com.example.invoice.service.registration.port.InvoicePayableStore;
-import com.example.invoice.service.registration.port.LifecycleEventPublisher;
+import com.example.invoice.service.domain.model.payableinvoice.InvoiceDocumentPayable;
+import com.example.invoice.service.domain.model.payableinvoice.InvoiceItem;
+import com.example.invoice.service.domain.model.payableinvoice.InvoicePayableModel;
+import com.example.invoice.service.domain.einvoice.error.LifecycleEventType;
+import com.example.invoice.service.domain.einvoice.error.MappingError;
+import com.example.invoice.service.domain.einvoice.port.InvoicePayableStore;
+import com.example.invoice.service.domain.einvoice.port.LifecycleEventPublisher;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.math.BigDecimal;

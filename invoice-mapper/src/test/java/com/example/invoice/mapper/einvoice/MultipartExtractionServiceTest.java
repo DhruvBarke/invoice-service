@@ -9,13 +9,13 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.example.invoice.mapper.einvoice.DocumentReferenceMapper.AttachmentPayload;
-import com.example.invoice.mapper.einvoice.MultipartExtractionService.ExtractedAttachment;
+import com.example.invoice.service.domain.model.invoice.ExtractedAttachment;
 import com.example.invoice.mapper.einvoice.MultipartExtractionService.Result;
 import com.example.invoice.mapper.einvoice.MultipartExtractionService.Status;
-import com.example.invoice.mapper.einvoice.model.invoice.AdditionalDocumentReference;
-import com.example.invoice.mapper.einvoice.model.invoice.Attachment;
-import com.example.invoice.mapper.einvoice.model.invoice.EmbeddedDocument;
-import com.example.invoice.mapper.einvoice.model.invoice.Invoice;
+import com.example.invoice.service.domain.model.invoice.AdditionalDocumentReference;
+import com.example.invoice.service.domain.model.invoice.Attachment;
+import com.example.invoice.service.domain.model.invoice.EmbeddedDocument;
+import com.example.invoice.service.domain.model.invoice.Invoice;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Base64;

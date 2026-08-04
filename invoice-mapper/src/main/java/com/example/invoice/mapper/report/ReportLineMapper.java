@@ -1,11 +1,11 @@
 package com.example.invoice.mapper.report;
 
-import com.example.invoice.mapper.einvoice.model.payableinvoice.InvoiceItem;
-import com.example.invoice.mapper.report.model.BilledQuantity;
-import com.example.invoice.mapper.report.model.InvoiceLine;
-import com.example.invoice.mapper.report.model.LineNote;
-import com.example.invoice.mapper.report.model.Price;
-import com.example.invoice.mapper.report.model.Product;
+import com.example.invoice.service.domain.model.payableinvoice.InvoiceItem;
+import com.example.invoice.service.domain.model.report.BilledQuantity;
+import com.example.invoice.service.domain.model.report.InvoiceLine;
+import com.example.invoice.service.domain.model.report.LineNote;
+import com.example.invoice.service.domain.model.report.Price;
+import com.example.invoice.service.domain.model.report.Product;
 import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.List;

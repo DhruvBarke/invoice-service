@@ -2,19 +2,19 @@ package com.example.invoice.mapper.report;
 
 import static com.example.invoice.mapper.einvoice.Constant.*;
 
-import com.example.invoice.mapper.einvoice.model.payableinvoice.InvoiceItem;
-import com.example.invoice.mapper.einvoice.model.payableinvoice.InvoicePayable;
-import com.example.invoice.mapper.einvoice.model.payableinvoice.InvoicePayableModel;
-import com.example.invoice.mapper.report.model.BusinessProcess;
-import com.example.invoice.mapper.report.model.Invoice;
-import com.example.invoice.mapper.report.model.InvoicePeriod;
-import com.example.invoice.mapper.report.model.TaxSubTotal;
+import com.example.invoice.service.domain.model.payableinvoice.InvoiceItem;
+import com.example.invoice.service.domain.model.payableinvoice.InvoicePayable;
+import com.example.invoice.service.domain.model.payableinvoice.InvoicePayableModel;
+import com.example.invoice.service.domain.model.report.BusinessProcess;
+import com.example.invoice.service.domain.model.report.Invoice;
+import com.example.invoice.service.domain.model.report.InvoicePeriod;
+import com.example.invoice.service.domain.model.report.TaxSubTotal;
 import java.math.BigDecimal;
 import java.util.List;
 
 /**
  * Builds the per-invoice payload (TG-8 {@code Invoice}) inside a {@link
- * com.example.invoice.mapper.report.model.TransactionsReport} from an {@link
+ * com.example.invoice.service.domain.model.report.TransactionsReport} from an {@link
  * InvoicePayableModel} + its line items.
  *
  * <p>Ported from A's {@code ReportInvoiceMapper} — was a MapStruct-generated {@code abstract

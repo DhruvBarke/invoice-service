@@ -9,14 +9,14 @@ import com.example.invoice.mapper.einvoice.AmountMapper;
 import com.example.invoice.mapper.einvoice.DocumentReferenceMapper.AttachmentPayload;
 import com.example.invoice.mapper.einvoice.FeeTypeMatcher;
 import com.example.invoice.mapper.einvoice.MultipartExtractionService;
-import com.example.invoice.mapper.einvoice.model.invoice.CurrencyAmount;
-import com.example.invoice.mapper.einvoice.model.invoice.Invoice;
-import com.example.invoice.mapper.einvoice.model.invoice.TaxCategory;
-import com.example.invoice.mapper.einvoice.model.invoice.TaxSubtotal;
-import com.example.invoice.mapper.einvoice.model.invoice.TaxTotal;
-import com.example.invoice.mapper.einvoice.model.payableinvoice.InvoiceItem;
-import com.example.invoice.mapper.einvoice.model.payableinvoice.InvoicePayable;
-import com.example.invoice.mapper.einvoice.model.payableinvoice.InvoicePayableModel;
+import com.example.invoice.service.domain.model.invoice.CurrencyAmount;
+import com.example.invoice.service.domain.model.invoice.Invoice;
+import com.example.invoice.service.domain.model.invoice.TaxCategory;
+import com.example.invoice.service.domain.model.invoice.TaxSubtotal;
+import com.example.invoice.service.domain.model.invoice.TaxTotal;
+import com.example.invoice.service.domain.model.payableinvoice.InvoiceItem;
+import com.example.invoice.service.domain.model.payableinvoice.InvoicePayable;
+import com.example.invoice.service.domain.model.payableinvoice.InvoicePayableModel;
 import com.example.invoice.mapper.report.ReportFlowConfig;
 import com.example.invoice.mapper.report.ReportInvoiceMapper;
 import com.example.invoice.mapper.report.ReportLineMapper;
@@ -165,7 +165,7 @@ class MapperBoundaryCasesTest {
     item.setItemDescription("Trading fees");   // becomes the product name
     item.setFeeAmount(new BigDecimal("10.00"));
 
-    List<com.example.invoice.mapper.report.model.InvoiceLine> lines =
+    List<com.example.invoice.service.domain.model.report.InvoiceLine> lines =
         ReportLineMapper.toInvoiceLines(List.of(item));
     assertEquals("Trading fees", lines.get(0).getProduct().getName());
     assertNotNull(lines.get(0).getNote());

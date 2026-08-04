@@ -6,10 +6,10 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 
 import com.example.invoice.mapper.einvoice.DocumentReferenceMapper.AttachmentPayload;
 import com.example.invoice.mapper.einvoice.EInvoiceFacadeMapper.MappedResult;
-import com.example.invoice.mapper.einvoice.model.invoice.Invoice;
-import com.example.invoice.mapper.einvoice.model.payableinvoice.InvoiceItem;
-import com.example.invoice.mapper.einvoice.model.payableinvoice.InvoicePayable;
-import com.example.invoice.mapper.einvoice.model.payableinvoice.InvoicePayableModel;
+import com.example.invoice.service.domain.model.invoice.Invoice;
+import com.example.invoice.service.domain.model.payableinvoice.InvoiceItem;
+import com.example.invoice.service.domain.model.payableinvoice.InvoicePayable;
+import com.example.invoice.service.domain.model.payableinvoice.InvoicePayableModel;
 import com.example.invoice.service.domain.model.PartyRegistrationDetails;
 import com.example.invoice.service.domain.port.in.PartyRegistrationLookup;
 import java.math.BigDecimal;

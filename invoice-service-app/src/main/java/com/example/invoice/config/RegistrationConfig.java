@@ -1,23 +1,25 @@
 package com.example.invoice.config;
 
 import com.example.invoice.mapper.einvoice.EInvoiceFacadeMapper;
+import com.example.invoice.mapper.einvoice.EInvoiceMappingAdapter;
 import com.example.invoice.mapper.einvoice.FeeTypeMatcher;
 import com.example.invoice.mapper.einvoice.FeeTypeProvider;
 import com.example.invoice.mapper.einvoice.MultipartExtractionService;
 import com.example.invoice.service.alerting.publish.AlertEmailPort;
 import com.example.invoice.service.alerting.publish.RegistrationAlertEmailBridge;
-import com.example.invoice.service.registration.Business;
-import com.example.invoice.service.registration.InvoiceRegistrationService;
-import com.example.invoice.service.registration.port.ExistingInvoicePayableLookup;
-import com.example.invoice.service.registration.port.InvoicePayableStore;
-import com.example.invoice.service.registration.port.LifecycleEventPublisher;
-import com.example.invoice.service.registration.port.RegistrationAlertNotifier;
-import com.example.invoice.service.registration.rule.AttachmentPresentRule;
-import com.example.invoice.service.registration.rule.BrokerageTradeFileRule;
-import com.example.invoice.service.registration.rule.DuplicateInvoiceRule;
-import com.example.invoice.service.registration.rule.LineItemsPresentRule;
-import com.example.invoice.service.registration.rule.ValidationRegistry;
-import com.example.invoice.service.registration.rule.ValidationRule;
+import com.example.invoice.service.domain.einvoice.Business;
+import com.example.invoice.service.domain.einvoice.InvoiceRegistrationService;
+import com.example.invoice.service.domain.einvoice.port.ExistingInvoicePayableLookup;
+import com.example.invoice.service.domain.einvoice.port.EInvoiceMappingPort;
+import com.example.invoice.service.domain.einvoice.port.InvoicePayableStore;
+import com.example.invoice.service.domain.einvoice.port.LifecycleEventPublisher;
+import com.example.invoice.service.domain.einvoice.port.RegistrationAlertNotifier;
+import com.example.invoice.service.domain.einvoice.rule.AttachmentPresentRule;
+import com.example.invoice.service.domain.einvoice.rule.BrokerageTradeFileRule;
+import com.example.invoice.service.domain.einvoice.rule.DuplicateInvoiceRule;
+import com.example.invoice.service.domain.einvoice.rule.LineItemsPresentRule;
+import com.example.invoice.service.domain.einvoice.rule.ValidationRegistry;
+import com.example.invoice.service.domain.einvoice.rule.ValidationRule;
 import com.example.invoice.service.domain.port.in.PartyRegistrationLookup;
 import java.util.List;
 import java.util.Map;
@@ -120,16 +122,29 @@ public class RegistrationConfig {
     return builder.build();
   }
 
+  /**
+   * The mapping stack, behind its port.
+   *
+   * <p>The three collaborators are assembled here and nowhere else. The use case below takes
+   * the port, not these three, which is what keeps it from knowing that a fee-type matcher
+   * exists at all.
+   */
   @Bean
-  public InvoiceRegistrationService invoiceRegistrationService(
+  public EInvoiceMappingPort eInvoiceMappingPort(
       EInvoiceFacadeMapper facadeMapper,
       FeeTypeMatcher feeTypeMatcher,
-      MultipartExtractionService extractor,
+      MultipartExtractionService extractor) {
+    return new EInvoiceMappingAdapter(facadeMapper, feeTypeMatcher, extractor);
+  }
+
+  @Bean
+  public InvoiceRegistrationService invoiceRegistrationService(
+      EInvoiceMappingPort mappingPort,
       ValidationRegistry rules,
       InvoicePayableStore store,
       LifecycleEventPublisher lifecyclePublisher,
       RegistrationAlertNotifier alertNotifier) {
     return new InvoiceRegistrationService(
-        facadeMapper, feeTypeMatcher, extractor, rules, store, lifecyclePublisher, alertNotifier);
+        mappingPort, rules, store, lifecyclePublisher, alertNotifier);
   }
 }

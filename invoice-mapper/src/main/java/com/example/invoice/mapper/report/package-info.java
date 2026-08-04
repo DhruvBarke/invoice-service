@@ -24,7 +24,7 @@
  *       Flux 10 Seller / Buyer schema doesn't carry them either, so no regression.</li>
  *   <li><b>{@code Flux10DateSerde.DATE_TIME_FORMAT} inlined</b> as
  *       {@link ReportDocumentMapper#DATE_TIME_FORMAT}. The full Jackson serde was omitted
- *       from the vendored model (see {@link com.example.invoice.mapper.report.model.package-info}).</li>
+ *       from the vendored model (see {@link com.example.invoice.service.domain.model.report.package-info}).</li>
  * </ul>
  *
  * <p><b>Sub-mapper graph.</b>

@@ -13,7 +13,7 @@ import java.time.format.DateTimeParseException;
  * instance state.
  *
  * <p>Both the einvoice UBL model and {@link
- * com.example.invoice.mapper.einvoice.model.payableinvoice.InvoicePayable} use {@link LocalDate}
+ * com.example.invoice.service.domain.model.payableinvoice.InvoicePayable} use {@link LocalDate}
  * for most date fields, so the heavy lifting here is tolerant parsing of stringified dates that
  * show up in JSON payload columns (ISO-8601).
  */

@@ -1,9 +1,9 @@
 package com.example.invoice.mapper.report;
 
-import com.example.invoice.mapper.report.model.CurrencyAmount;
-import com.example.invoice.mapper.report.model.MonetaryTotal;
-import com.example.invoice.mapper.report.model.TaxCategory;
-import com.example.invoice.mapper.report.model.TaxSubTotal;
+import com.example.invoice.service.domain.model.report.CurrencyAmount;
+import com.example.invoice.service.domain.model.report.MonetaryTotal;
+import com.example.invoice.service.domain.model.report.TaxCategory;
+import com.example.invoice.service.domain.model.report.TaxSubTotal;
 import java.math.BigDecimal;
 import java.util.List;
 

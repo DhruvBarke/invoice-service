@@ -21,7 +21,7 @@
  *       document store is the caller's concern; the mapper is a pure transformation.</li>
  *   <li><b>Spring {@code MultipartFile} eliminated from the module surface.</b>
  *       {@link MultipartExtractionService} returns {@link
- *       MultipartExtractionService.ExtractedAttachment} records
+ *       ExtractedAttachment} records
  *       ({@code filename / bytes / mimeType}); callers wrap into whatever their web layer
  *       expects. Required by the {@code invoice-mapper} enforcer rule, which bans
  *       {@code org.springframework:*}.</li>

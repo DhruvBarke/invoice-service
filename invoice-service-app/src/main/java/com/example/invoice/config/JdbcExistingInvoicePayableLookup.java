@@ -1,6 +1,6 @@
 package com.example.invoice.config;
 
-import com.example.invoice.service.registration.port.ExistingInvoicePayableLookup;
+import com.example.invoice.service.domain.einvoice.port.ExistingInvoicePayableLookup;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;

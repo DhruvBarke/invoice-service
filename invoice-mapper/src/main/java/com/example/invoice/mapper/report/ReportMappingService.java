@@ -1,8 +1,8 @@
 package com.example.invoice.mapper.report;
 
-import com.example.invoice.mapper.einvoice.model.payableinvoice.InvoiceItem;
-import com.example.invoice.mapper.einvoice.model.payableinvoice.InvoicePayableModel;
-import com.example.invoice.mapper.report.model.ReportModel;
+import com.example.invoice.service.domain.model.payableinvoice.InvoiceItem;
+import com.example.invoice.service.domain.model.payableinvoice.InvoicePayableModel;
+import com.example.invoice.service.domain.model.report.ReportModel;
 import java.util.List;
 import java.util.Objects;
 
