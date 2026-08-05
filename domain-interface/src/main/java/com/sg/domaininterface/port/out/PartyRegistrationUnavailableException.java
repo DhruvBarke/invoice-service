@@ -9,6 +9,9 @@ package com.sg.domaininterface.port.out;
  * rejected" and "invoice rejected, fix row 4471".
  */
 public class PartyRegistrationUnavailableException extends RuntimeException {
+    /** Pinned so a rolling deployment cannot make an in-flight instance unreadable. */
+    private static final long serialVersionUID = 1L;
+
 
     private final UnavailabilityReason reason;
     private final String keySpace;

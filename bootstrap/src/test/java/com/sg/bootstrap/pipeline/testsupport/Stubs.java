@@ -7,6 +7,9 @@ import com.sg.domaininterface.port.out.PartyRegistrationLookup;
 import com.sg.domaininterface.port.out.RegistrationAlertNotifier;
 import com.sg.mapper.einvoice.FeeTypeMatcher;
 import java.util.ArrayList;
+import com.sg.domaininterface.model.invoice.ExtractedAttachment;
+import com.sg.domaininterface.port.thirdparty.SgDocReferentialService;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -84,6 +87,28 @@ public final class Stubs {
    * port's documented contract, and a test asserting on the reference after registration would
    * be testing the stub's silence rather than the pipeline's behaviour.
    */
+  /**
+   * A document store that accepts everything and numbers the handles.
+   *
+   * <p>The registration pipeline uploads each attachment before writing the row, so a test that
+   * exercises the pipeline needs one of these whether or not it cares about documents.
+   */
+  public static final class RecordingDocumentStore implements SgDocReferentialService {
+    public final List<String> uploaded = new ArrayList<>();
+    private final AtomicInteger next = new AtomicInteger();
+
+    @Override
+    public String upload(ExtractedAttachment attachment, String invoiceReference) {
+      uploaded.add(attachment.filename());
+      return "DOC-" + next.incrementAndGet();
+    }
+
+    @Override
+    public ExtractedAttachment download(String sgDocId) {
+      throw new UnsupportedOperationException("registration never reads a document back");
+    }
+  }
+
   public static final class RecordingStore implements InvoicePayableStore {
     public static final UUID ROW_ID = UUID.fromString("00000000-0000-0000-0000-000000000042");
     public static final String INVOICE_REFERENCE = "0000001000";

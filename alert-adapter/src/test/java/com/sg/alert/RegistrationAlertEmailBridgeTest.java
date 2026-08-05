@@ -8,6 +8,7 @@ import com.sg.domaininterface.model.einvoice.error.MappingError;
 import com.sg.domaininterface.model.einvoice.error.RegistrationOutcome;
 import com.sg.domaininterface.port.out.RegistrationAlertNotifier.RegistrationAlert;
 import com.sg.domaininterface.port.out.AlertEmailPort;
+import com.sg.domaininterface.port.out.AlertRoutingPolicy;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
@@ -43,7 +44,7 @@ class RegistrationAlertEmailBridgeTest {
 
   private static CapturingPort send(RegistrationOutcome outcome) {
     CapturingPort port = new CapturingPort();
-    new RegistrationAlertEmailBridge(port, List.of("ops@example.com"), "[invoice-service]")
+    new RegistrationAlertEmailBridge(port, AlertRoutingPolicy.fixed(List.of("ops@example.com"), "[invoice-service]"))
         .notify(alert(outcome));
     return port;
   }
@@ -65,7 +66,7 @@ class RegistrationAlertEmailBridgeTest {
     @DisplayName("a null alert is ignored rather than throwing")
     void nullAlertIgnored() {
       CapturingPort port = new CapturingPort();
-      new RegistrationAlertEmailBridge(port, List.of("ops@example.com"), null).notify(null);
+      new RegistrationAlertEmailBridge(port, AlertRoutingPolicy.fixed(List.of("ops@example.com"), "[invoice-service]")).notify(null);
       assertTrue(port.sent.isEmpty());
     }
 
@@ -86,7 +87,7 @@ class RegistrationAlertEmailBridgeTest {
         throw new IllegalStateException("SMTP refused the connection");
       };
       RegistrationAlertEmailBridge bridge =
-          new RegistrationAlertEmailBridge(exploding, List.of("ops@example.com"), null);
+          new RegistrationAlertEmailBridge(exploding, AlertRoutingPolicy.fixed(List.of("ops@example.com"), "[invoice-service]"));
 
       bridge.notify(alert(RegistrationOutcome.decide(
           List.of(MappingError.of(ErrorCode.DUPLICATE_INVOICE, "dup")))));
@@ -94,16 +95,22 @@ class RegistrationAlertEmailBridgeTest {
     }
 
     @Test
-    @DisplayName("at least one recipient is required")
-    void recipientsAreRequired() {
+    @DisplayName("the collaborators are required, but recipients are the policy's business")
+    void collaboratorsAreRequired() {
       CapturingPort port = new CapturingPort();
       assertThrows(NullPointerException.class,
-          () -> new RegistrationAlertEmailBridge(null, List.of("a@b.c"), null));
+          () -> new RegistrationAlertEmailBridge(null, AlertRoutingPolicy.fixed(List.of("a@b.c"), "[invoice-service]")));
       assertThrows(NullPointerException.class,
-          () -> new RegistrationAlertEmailBridge(port, null, null));
-      assertThrows(IllegalArgumentException.class,
-          () -> new RegistrationAlertEmailBridge(port, List.of(), null),
-          "an alert with nowhere to go is a configuration error, not a silent no-op");
+          () -> new RegistrationAlertEmailBridge(port, null));
+
+      // An empty recipient list is no longer a construction failure: it is a routing decision,
+      // and the policy answers "do not send" for it. Constructing the bridge with one used to
+      // throw, which meant one unconfigured business took the whole notifier down with it.
+      CapturingPort quiet = new CapturingPort();
+      new RegistrationAlertEmailBridge(quiet, AlertRoutingPolicy.fixed(List.of(), "[x]"))
+          .notify(alert(RegistrationOutcome.decide(new java.util.ArrayList<>(
+              List.of(MappingError.of(ErrorCode.BUSINESS_UNKNOWN, "no token"))))));
+      assertTrue(quiet.sent.isEmpty(), "no recipients means no message, not an exception");
     }
   }
 
@@ -154,7 +161,7 @@ class RegistrationAlertEmailBridgeTest {
     @DisplayName("the prefix defaults when none is configured")
     void subjectPrefixDefaults() {
       CapturingPort port = new CapturingPort();
-      new RegistrationAlertEmailBridge(port, List.of("ops@example.com"), null)
+      new RegistrationAlertEmailBridge(port, AlertRoutingPolicy.fixed(List.of("ops@example.com"), "[invoice-service]"))
           .notify(alert(RegistrationOutcome.decide(
               List.of(MappingError.of(ErrorCode.DUPLICATE_INVOICE, "dup")))));
       assertTrue(port.sent.get(0).subject().startsWith("[invoice-service]"));
@@ -165,7 +172,7 @@ class RegistrationAlertEmailBridgeTest {
     void unidentifiableInvoice() {
       CapturingPort port = new CapturingPort();
       EInvoiceMarker blank = new EInvoiceMarker(null, null, null, null);
-      new RegistrationAlertEmailBridge(port, List.of("ops@example.com"), null)
+      new RegistrationAlertEmailBridge(port, AlertRoutingPolicy.fixed(List.of("ops@example.com"), "[invoice-service]"))
           .notify(new RegistrationAlert(null, null, null, blank,
               RegistrationOutcome.decide(List.of(
                   MappingError.of(ErrorCode.MARKER_MALFORMED, "no endpoint"))),
@@ -292,7 +299,7 @@ class RegistrationAlertEmailBridgeTest {
     void absentFieldsAreLabelled() {
       CapturingPort port = new CapturingPort();
       EInvoiceMarker blank = new EInvoiceMarker(null, null, null, null);
-      new RegistrationAlertEmailBridge(port, List.of("ops@example.com"), null)
+      new RegistrationAlertEmailBridge(port, AlertRoutingPolicy.fixed(List.of("ops@example.com"), "[invoice-service]"))
           .notify(new RegistrationAlert(null, null, null, blank,
               RegistrationOutcome.decide(List.of(
                   MappingError.of(ErrorCode.MARKER_MALFORMED, "no endpoint"))),
@@ -310,7 +317,7 @@ class RegistrationAlertEmailBridgeTest {
     @DisplayName("the configured recipients are the ones addressed")
     void recipientsAreUsed() {
       CapturingPort port = new CapturingPort();
-      new RegistrationAlertEmailBridge(port, List.of("a@x.com", "b@x.com"), null)
+      new RegistrationAlertEmailBridge(port, AlertRoutingPolicy.fixed(List.of("a@x.com", "b@x.com"), "[invoice-service]"))
           .notify(alert(RegistrationOutcome.decide(
               List.of(MappingError.of(ErrorCode.DUPLICATE_INVOICE, "dup")))));
       assertEquals(List.of("a@x.com", "b@x.com"), port.sent.get(0).to());

@@ -6,6 +6,9 @@ package com.sg.mapper.einvoice;
  * decide whether to retry or surface to the user.
  */
 public class EInvoiceMappingException extends RuntimeException {
+  /** Pinned so a rolling deployment cannot make an in-flight instance unreadable. */
+  private static final long serialVersionUID = 1L;
+
 
   public EInvoiceMappingException(String message) {
     super(message);

@@ -132,6 +132,25 @@ class EInvoiceMappingAdapterTest {
     }
 
     @Test
+    @DisplayName("an ambiguous token gets its own code, not the unresolved one")
+    void ambiguousFeeIsItsOwnFailure() {
+      // Two entries that a bare BROKERAGE matches equally well. The sender's fix is to send the
+      // fuller name — which is different from the fix for a token that matched nothing, and
+      // reporting both as UNRESOLVED sends them hunting for a fee type that is in fact there.
+      Map<String, String> ties =
+          Map.of("F04", "BROKERAGE_PRINCIPAL", "F05", "BROKERAGE_AGENCY");
+      MappingResult r = adapter(new EInvoiceFacadeMapper(lookup()),
+          new FeeTypeMatcher(() -> ties), new MultipartExtractionService())
+          .map(invoiceWithMarker("552120222_MARK_BROKERAGE"));
+
+      assertTrue(has(r, ErrorCode.FEETYPE_AMBIGUOUS));
+      assertFalse(has(r, ErrorCode.FEETYPE_UNRESOLVED),
+          "one problem, reported once, under the code that describes it");
+      assertNull(r.feeId());
+      assertEquals("BROKERAGE", r.feeType(), "the sender's own token is still recorded");
+    }
+
+    @Test
     @DisplayName("a matcher that throws is reported, not propagated")
     void throwingMatcherIsCaptured() {
       FeeTypeMatcher exploding = new FeeTypeMatcher(() -> {

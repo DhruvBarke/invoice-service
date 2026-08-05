@@ -196,6 +196,39 @@ class JdbcInvoicePayableStoreTest {
     }
 
     @Test
+    @DisplayName("a refusal records its reason on the row, at insert time")
+    void refusalReasonIsOnTheRow() throws SQLException {
+      // Not left to publish(). A refusal whose publish failed used to leave a row marked
+      // CANCELLED with nothing saying on what grounds — the one thing an operator needs and the
+      // one thing the sender asks about.
+      RegistrationOutcome refused = RegistrationOutcome.decide(
+          new java.util.ArrayList<>(List.of(
+              MappingError.of(ErrorCode.DUPLICATE_INVOICE, "seen before"))));
+
+      store.persist(request(model("SUP-INV-1"), List.of(), List.of(), refused));
+
+      verify(payable).setString(27, LifecycleEventType.REFUSED.name());
+      verify(payable).setString(28, refused.lifecycleReasonCode());
+      verify(payable).setString(29, "PENDING");
+      verify(payable).setString(eq(30), contains("\"cdarCode\""));
+      verify(payable).setString(eq(30), contains("0001000042"));
+      verify(payable).setString(eq(30), contains("SUP-INV-1"));
+    }
+
+    @Test
+    @DisplayName("a clean registration leaves the lifecycle columns null")
+    void cleanRegistrationHasNoLifecycle() throws SQLException {
+      // A PENDING status with nothing to deliver would have a scheduler picking the row up
+      // forever and finding nothing to send.
+      store.persist(request(model("SUP-INV-1"), List.of(), List.of(), clean()));
+
+      verify(payable).setString(27, null);
+      verify(payable).setString(28, null);
+      verify(payable).setString(29, null);
+      verify(payable).setString(30, null);
+    }
+
+    @Test
     @DisplayName("a null model still writes a row, with the payload as an empty object")
     void nullModelStillWritesARow() throws SQLException {
       // Mapping can fail outright. The registration is still a fact worth recording, and the

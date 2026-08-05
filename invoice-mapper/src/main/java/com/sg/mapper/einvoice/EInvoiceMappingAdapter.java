@@ -88,21 +88,21 @@ public final class EInvoiceMappingAdapter implements EInvoiceMappingPort {
 
   /** Parse the receiver endpoint marker, recording any structural defect. */
   private static EInvoiceMarker parseMarker(Invoice eInvoice, List<MappingError> errors) {
-    String endpointValue = extractEndpointValue(eInvoice);
-    EInvoiceMarker marker = EInvoiceMarkerParser.parse(endpointValue);
+    String markerValue = extractMarkerValue(eInvoice);
+    EInvoiceMarker marker = EInvoiceMarkerParser.parse(markerValue);
 
-    if (endpointValue == null || endpointValue.isBlank()) {
+    if (markerValue == null || markerValue.isBlank()) {
       errors.add(MappingError.of(ErrorCode.MARKER_MALFORMED,
           "accountingCustomerParty.party.endpointId.value is null or blank"));
       return marker;
     }
     if (marker.business() == null) {
       errors.add(MappingError.of(ErrorCode.BUSINESS_UNKNOWN,
-          "business token unresolved in endpoint marker '" + endpointValue + "'"));
+          "business token unresolved in routing marker '" + markerValue + "'"));
     }
     if (marker.feeType() == null) {
       errors.add(MappingError.of(ErrorCode.MARKER_MALFORMED,
-          "fee-type tail missing from endpoint marker '" + endpointValue + "'"));
+          "fee-category tail missing from routing marker '" + markerValue + "'"));
     }
     return marker;
   }
@@ -120,8 +120,10 @@ public final class EInvoiceMappingAdapter implements EInvoiceMappingPort {
         return match;
       }
       String reason = feeTypeMatcher.explainFailure(marker.feeType());
-      errors.add(MappingError.of(ErrorCode.FEETYPE_UNRESOLVED,
-          "unresolved fee type '" + marker.feeType() + "': "
+      // "matched nothing" and "matched several" are different problems with different fixes,
+      // and the sender is the one who has to act on whichever it is.
+      errors.add(MappingError.of(codeFor(reason),
+          "could not resolve fee type '" + marker.feeType() + "': "
               + (reason == null ? "no reason available" : reason)));
       return null;
     } catch (RuntimeException ex) {
@@ -130,6 +132,19 @@ public final class EInvoiceMappingAdapter implements EInvoiceMappingPort {
           "fee-type provider failure: " + ex.getMessage(), ex));
       return null;
     }
+  }
+
+  /**
+   * Which fee-type failure this is.
+   *
+   * <p>Read off the matcher's own explanation rather than given a second API to ask: the
+   * matcher already distinguishes the two internally and says so in the text, and a parallel
+   * boolean would be a second thing to keep in step with it.
+   */
+  private static ErrorCode codeFor(String explanation) {
+    return explanation != null && explanation.toLowerCase(java.util.Locale.ROOT).contains("ambiguous")
+        ? ErrorCode.FEETYPE_AMBIGUOUS
+        : ErrorCode.FEETYPE_UNRESOLVED;
   }
 
   /** Run the mapping stack; the party lookup happens inside it. */
@@ -189,15 +204,22 @@ public final class EInvoiceMappingAdapter implements EInvoiceMappingPort {
   }
 
   /**
-   * Reach into the e-invoice for the receiver endpoint value.
+   * The receiver's routing marker: {@code <siren>_<BUSINESS>_<FEETYPE>}.
+   *
+   * <p>Read from {@code EndpointID} and nowhere else. {@code PartyLegalEntity.CompanyID} holds
+   * the bare SIREN — the same nine digits with no business and no fee type — so preferring it
+   * silently reduces every marker to its first token: the business never resolves, the fee type
+   * never resolves, and every invoice is refused as malformed while the document plainly
+   * contains what was needed.
    *
    * <p>The invoice itself is non-null — {@link #map} rejects null before anything reads it — so
    * only the nested elements need guarding.
    */
-  private static String extractEndpointValue(Invoice inv) {
+  private static String extractMarkerValue(Invoice inv) {
     if (inv.getAccountingCustomerParty() == null) return null;
     var party = inv.getAccountingCustomerParty().getParty();
     if (party == null || party.getEndpointId() == null) return null;
     return party.getEndpointId().getValue();
   }
+
 }

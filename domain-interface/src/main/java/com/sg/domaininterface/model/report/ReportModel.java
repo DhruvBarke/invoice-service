@@ -67,6 +67,12 @@ public class ReportModel implements Serializable {
   /** Soft-delete marker. */
   private boolean isDeleted;
 
-  /** The actual Flux 10 payload — what gets serialised to XML and submitted. */
-  private Report report;
+  /**
+   * The actual Flux 10 payload — what gets serialised to XML and submitted.
+   *
+   * <p>{@code transient} for the same reason as {@code InvoicePayable.childIds}: {@link Report}
+   * is not declared {@link java.io.Serializable} and this class is. The payload travels as XML
+   * and as jsonb, never through Java serialisation, so nothing is lost by saying so.
+   */
+  private transient Report report;
 }

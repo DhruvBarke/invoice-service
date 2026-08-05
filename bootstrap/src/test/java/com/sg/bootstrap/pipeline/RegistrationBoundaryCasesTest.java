@@ -33,6 +33,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -51,7 +52,8 @@ class RegistrationBoundaryCasesTest {
     return new InvoiceRegistrationServiceImpl(
         new EInvoiceMappingAdapter(
             new EInvoiceFacadeMapper(Stubs.lookup()), Stubs.matcher(), extractor),
-        noRules(), store, new Stubs.RecordingPublisher(), new Stubs.RecordingNotifier());
+        new Stubs.RecordingDocumentStore(), noRules(), store,
+        new Stubs.RecordingPublisher(), new Stubs.RecordingNotifier());
   }
 
   // ── Marker parsing ────────────────────────────────────────────────────────
@@ -220,9 +222,11 @@ class RegistrationBoundaryCasesTest {
         "labelled as the document's own copy, so an operator asking why no file was uploaded "
             + "is not told one was");
 
-    // Metadata only. The content belongs in SGDoc; sg_doc_id stays null until an uploader
-    // exists to fill it, and a null handle is the honest record of that.
-    assertNull(body.getSgDocId());
+    // Metadata plus a handle. The content itself belongs in SGDoc — this table has no content
+    // column — and the handle is the only route back to it. A null here would mean the upload
+    // failed, which is a different and reportable state.
+    assertNotNull(body.getSgDocId(),
+        "an embedded attachment is uploaded like any other; without a handle its bytes are lost");
   }
 
   @Test
@@ -315,7 +319,8 @@ class RegistrationBoundaryCasesTest {
     RegistrationOutcome outcome = new InvoiceRegistrationServiceImpl(
         new EInvoiceMappingAdapter(
             new EInvoiceFacadeMapper(Stubs.lookup()), racy, new MultipartExtractionService()),
-        noRules(), store, new Stubs.RecordingPublisher(), new Stubs.RecordingNotifier())
+        new Stubs.RecordingDocumentStore(), noRules(), store,
+        new Stubs.RecordingPublisher(), new Stubs.RecordingNotifier())
         .register(Fixtures.loadInvoice("custody-with-lines.json"), List.of());
 
     MappingError feeError = outcome.errors().stream()

@@ -15,6 +15,9 @@ public interface AlertEmailPort {
     void send(EmailMessage message);
 
     class EmailDispatchException extends RuntimeException {
+    /** Pinned so a rolling deployment cannot make an in-flight instance unreadable. */
+    private static final long serialVersionUID = 1L;
+
         public EmailDispatchException(String message, Throwable cause) {
             super(message, cause);
         }

@@ -17,6 +17,8 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeoutException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.LongAdder;
@@ -239,7 +241,10 @@ public final class EmailAlertPublisher implements AlertNotifier, AutoCloseable {
             }).get(config.shutdownFlushTimeout().toMillis(), TimeUnit.MILLISECONDS);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-        } catch (Exception e) {
+        } catch (ExecutionException | TimeoutException e) {
+            // The only two things Future.get can raise here besides interruption. Catching bare
+            // Exception also swallowed anything the surrounding code might throw later, which is
+            // how a shutdown bug hides itself.
             LOG.log(Level.WARNING, "Shutdown flush did not complete in time", e);
         } finally {
             dispatcher.shutdownNow();

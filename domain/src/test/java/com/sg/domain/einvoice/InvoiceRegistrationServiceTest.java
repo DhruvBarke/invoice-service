@@ -22,6 +22,8 @@ import com.sg.domaininterface.rule.einvoice.AttachmentChannel;
 import com.sg.domaininterface.rule.einvoice.ValidationContext;
 import com.sg.domaininterface.rule.einvoice.ValidationRule;
 import java.util.ArrayList;
+import com.sg.domaininterface.port.thirdparty.SgDocReferentialService;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicReference;
@@ -113,12 +115,37 @@ class InvoiceRegistrationServiceTest {
   private record Harness(InvoiceRegistrationService service, RecordingStore store,
                          RecordingPublisher publisher, RecordingNotifier notifier) {}
 
+  /** Accepts everything and numbers the handles, so a test can assert which upload was which. */
+  private static final class RecordingDocumentStore implements SgDocReferentialService {
+    final List<String> uploaded = new ArrayList<>();
+    final AtomicInteger next = new AtomicInteger();
+
+    @Override
+    public String upload(ExtractedAttachment attachment, String invoiceReference) {
+      uploaded.add(attachment.filename() + "@" + invoiceReference);
+      return "DOC-" + next.incrementAndGet();
+    }
+
+    @Override
+    public ExtractedAttachment download(String sgDocId) {
+      throw new UnsupportedOperationException("registration never reads a document back");
+    }
+  }
+
+  private static SgDocReferentialService refusingDocumentStore(RuntimeException failure) {
+    return new SgDocReferentialService() {
+      @Override public String upload(ExtractedAttachment a, String ref) { throw failure; }
+      @Override public ExtractedAttachment download(String id) { return null; }
+    };
+  }
+
   private static Harness harness(MappingResult result, ValidationRegistry rules) {
     RecordingStore store = new RecordingStore();
     RecordingPublisher publisher = new RecordingPublisher();
     RecordingNotifier notifier = new RecordingNotifier();
     return new Harness(
-        new InvoiceRegistrationServiceImpl(port(result), rules, store, publisher, notifier),
+        new InvoiceRegistrationServiceImpl(
+            port(result), new RecordingDocumentStore(), rules, store, publisher, notifier),
         store, publisher, notifier);
   }
 
@@ -280,7 +307,7 @@ class InvoiceRegistrationServiceTest {
       };
       RecordingStore store = new RecordingStore();
       RegistrationOutcome outcome = new InvoiceRegistrationServiceImpl(
-          exploding, noRules(), store, new RecordingPublisher(), new RecordingNotifier())
+          exploding, new RecordingDocumentStore(), noRules(), store, new RecordingPublisher(), new RecordingNotifier())
           .register(invoice("INV-1"), List.of());
 
       assertTrue(outcome.errors().stream().anyMatch(
@@ -356,7 +383,7 @@ class InvoiceRegistrationServiceTest {
       RecordingStore store = new RecordingStore();
       RecordingNotifier notifier = new RecordingNotifier();
       RegistrationOutcome outcome = new InvoiceRegistrationServiceImpl(
-          port(refusing()), noRules(), store,
+          port(refusing()), new RecordingDocumentStore(), noRules(), store,
           e -> { throw new IllegalStateException("lifecycle store is down"); },
           notifier).register(invoice("INV-1"), List.of());
 
@@ -370,7 +397,8 @@ class InvoiceRegistrationServiceTest {
     void notifierFailureIsSwallowed() {
       RecordingStore store = new RecordingStore();
       RegistrationOutcome outcome = new InvoiceRegistrationServiceImpl(
-          port(refusing()), noRules(), store, new RecordingPublisher(),
+          port(refusing()), new RecordingDocumentStore(), noRules(), store,
+          new RecordingPublisher(),
           a -> { throw new IllegalStateException("SMTP is down"); })
           .register(invoice("INV-1"), List.of());
 
@@ -394,16 +422,20 @@ class InvoiceRegistrationServiceTest {
       RecordingPublisher pub = new RecordingPublisher();
       RecordingNotifier n = new RecordingNotifier();
 
+      SgDocReferentialService d = new RecordingDocumentStore();
+
       assertThrows(NullPointerException.class,
-          () -> new InvoiceRegistrationServiceImpl(null, r, s, pub, n));
+          () -> new InvoiceRegistrationServiceImpl(null, d, r, s, pub, n));
       assertThrows(NullPointerException.class,
-          () -> new InvoiceRegistrationServiceImpl(p, null, s, pub, n));
+          () -> new InvoiceRegistrationServiceImpl(p, null, r, s, pub, n));
       assertThrows(NullPointerException.class,
-          () -> new InvoiceRegistrationServiceImpl(p, r, null, pub, n));
+          () -> new InvoiceRegistrationServiceImpl(p, d, null, s, pub, n));
       assertThrows(NullPointerException.class,
-          () -> new InvoiceRegistrationServiceImpl(p, r, s, null, n));
+          () -> new InvoiceRegistrationServiceImpl(p, d, r, null, pub, n));
       assertThrows(NullPointerException.class,
-          () -> new InvoiceRegistrationServiceImpl(p, r, s, pub, null));
+          () -> new InvoiceRegistrationServiceImpl(p, d, r, s, null, n));
+      assertThrows(NullPointerException.class,
+          () -> new InvoiceRegistrationServiceImpl(p, d, r, s, pub, null));
     }
 
     @Test

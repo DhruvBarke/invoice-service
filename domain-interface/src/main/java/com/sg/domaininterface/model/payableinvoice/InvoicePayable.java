@@ -131,7 +131,17 @@ public class InvoicePayable implements Serializable {
   private BigDecimal sumOfGoodToPayTrades;
   private String feeType;
   private UUID parentId;
-  private List<UUID> childIds;
+
+  /**
+   * {@code transient} because {@link List} is not itself {@link java.io.Serializable}, and this
+   * class is.
+   *
+   * <p>Java serialisation is not how this travels: it goes to the database as jsonb and over the
+   * wire as JSON, both of which read the field through its accessor and neither of which cares
+   * about {@code transient}. Marking it keeps the compiler honest without changing any format
+   * anyone actually uses.
+   */
+  private transient List<UUID> childIds;
   private String clientType;
   private String clientName;
   private Boolean paymentFlag;

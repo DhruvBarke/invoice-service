@@ -86,7 +86,8 @@ public final class JdbcInvoicePayableStore implements InvoicePayableStore, Lifec
           ref_cpty_id, invoice_type, invoice_status,
           amount, currency, isdeleted, invoice_flow,
           provider_reference, business, fee_id, fee_type,
-          registration_comment, registration_errors
+          registration_comment, registration_errors,
+          lifecycle_event_type, lifecycle_reason_code, lifecycle_event_status, lifecycle_payload
       ) VALUES (
           ?, ?,
           ?, ?, ?,
@@ -96,7 +97,8 @@ public final class JdbcInvoicePayableStore implements InvoicePayableStore, Lifec
           ?, ?, ?,
           ?, ?, ?, ?,
           ?, ?, ?, ?,
-          ?, ?::jsonb
+          ?, ?::jsonb,
+          ?, ?, ?, ?::jsonb
       )
       """;
 
@@ -163,7 +165,11 @@ public final class JdbcInvoicePayableStore implements InvoicePayableStore, Lifec
 
   public JdbcInvoicePayableStore(DataSource dataSource) {
     this.dataSource = Objects.requireNonNull(dataSource, "dataSource");
-    this.json = new ObjectMapper();
+    // Plain BigDecimal, matching the wire codec. Without it an amount can land in the jsonb as
+    // 1.23456E+5, which every later reader of that column has to know to expect.
+    this.json = com.fasterxml.jackson.databind.json.JsonMapper.builder()
+        .enable(com.fasterxml.jackson.core.StreamWriteFeature.WRITE_BIGDECIMAL_AS_PLAIN)
+        .build();
     this.json.findAndRegisterModules();
   }
 
@@ -270,7 +276,23 @@ public final class JdbcInvoicePayableStore implements InvoicePayableStore, Lifec
       ps.setString(i++, req.feeType());
 
       ps.setString(i++, req.outcome().comment());
-      ps.setString(i, toJson(serialiseErrors(req.outcome().errors())));
+      ps.setString(i++, toJson(serialiseErrors(req.outcome().errors())));
+
+      // The lifecycle columns are written HERE, not left to publish().
+      //
+      // They used to be set only by the follow-up UPDATE, which meant a refusal whose publish
+      // failed left a row marked CANCELLED with no record of why — the status said the invoice
+      // was rejected and nothing said on what grounds, which is the one thing an operator needs
+      // and the one thing the sender asks about. The row carries the reason from the moment it
+      // exists; publish() only moves it along.
+      LifecycleEventType lifecycle = req.outcome().lifecycleEvent();
+      ps.setString(i++, lifecycle == null ? null : lifecycle.name());
+      ps.setString(i++, req.outcome().lifecycleReasonCode());
+      // PENDING as soon as there is something to deliver, so a scheduler that runs before
+      // publish() does still finds it.
+      ps.setString(i++, lifecycle == null ? null : "PENDING");
+      ps.setString(i, lifecycle == null ? null
+          : toJson(serialiseOutcomeLifecycle(invoiceReference, req)));
 
       ps.executeUpdate();
     }
@@ -483,6 +505,28 @@ public final class JdbcInvoicePayableStore implements InvoicePayableStore, Lifec
     return out;
   }
 
+  /**
+   * The lifecycle payload as it is known at insert time.
+   *
+   * <p>Everything needed to build the outbound event: the type, its CDAR code, the reason, the
+   * comment and both references. Written with the row so the event can be reconstructed from
+   * the database alone — a scheduler picking this up after a restart has no in-memory
+   * {@link PendingLifecycleEvent} to consult.
+   */
+  static Map<String, Object> serialiseOutcomeLifecycle(String invoiceReference,
+                                                       PersistRequest req) {
+    LifecycleEventType type = req.outcome().lifecycleEvent();
+    Map<String, Object> row = new LinkedHashMap<>();
+    row.put("invoiceReference", invoiceReference);
+    row.put("providerReference", providerReferenceOf(req.model()));
+    row.put("type", type.name());
+    row.put("cdarCode", type.cdarCode());
+    row.put("reasonCode", req.outcome().lifecycleReasonCode());
+    row.put("comment", req.outcome().comment());
+    row.put("status", req.outcome().status().name());
+    return row;
+  }
+
   static Map<String, Object> serialiseLifecycle(PendingLifecycleEvent e) {
     Map<String, Object> row = new LinkedHashMap<>();
     row.put("invoicePayableId", e.invoicePayableId().toString());
@@ -504,6 +548,9 @@ public final class JdbcInvoicePayableStore implements InvoicePayableStore, Lifec
 
   /** Runtime type so JDBC's checked exceptions do not leak into the registration flow. */
   public static class PersistenceException extends RuntimeException {
+    /** Pinned so a rolling deployment cannot make an in-flight instance unreadable. */
+    private static final long serialVersionUID = 1L;
+
     public PersistenceException(String message, Throwable cause) {
       super(message, cause);
     }

@@ -1,6 +1,7 @@
 package com.sg.domain.einvoice;
 
 import com.sg.domain.einvoice.rule.ValidationRegistry;
+import com.sg.domaininterface.model.einvoice.Business;
 import com.sg.domaininterface.model.einvoice.EInvoiceMarker;
 import com.sg.domaininterface.model.einvoice.error.ErrorCode;
 import com.sg.domaininterface.model.einvoice.error.MappingError;
@@ -15,11 +16,14 @@ import com.sg.domaininterface.port.out.InvoicePayableStore;
 import com.sg.domaininterface.port.out.LifecycleEventPublisher.PendingLifecycleEvent;
 import com.sg.domaininterface.port.out.LifecycleEventPublisher;
 import com.sg.domaininterface.port.out.RegistrationAlertNotifier.RegistrationAlert;
+import com.sg.domaininterface.port.thirdparty.ReferentialUnavailableException;
+import com.sg.domaininterface.port.thirdparty.SgDocReferentialService;
 import com.sg.domaininterface.port.out.RegistrationAlertNotifier;
 import com.sg.domaininterface.rule.einvoice.AttachmentChannel;
 import com.sg.domaininterface.rule.einvoice.ValidationContext;
 import com.sg.domaininterface.rule.einvoice.ValidationRule;
 import com.sg.domaininterface.port.in.InvoiceRegistrationService;
+import com.sg.domaininterface.port.in.RegistrationFailedException;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
@@ -63,6 +67,7 @@ public final class InvoiceRegistrationServiceImpl implements InvoiceRegistration
       System.getLogger(InvoiceRegistrationServiceImpl.class.getName());
 
   private final EInvoiceMappingPort mappingPort;
+  private final SgDocReferentialService documentStore;
   private final ValidationRegistry rules;
   private final InvoicePayableStore store;
   private final LifecycleEventPublisher lifecyclePublisher;
@@ -70,11 +75,13 @@ public final class InvoiceRegistrationServiceImpl implements InvoiceRegistration
 
   public InvoiceRegistrationServiceImpl(
       EInvoiceMappingPort mappingPort,
+      SgDocReferentialService documentStore,
       ValidationRegistry rules,
       InvoicePayableStore store,
       LifecycleEventPublisher lifecyclePublisher,
       RegistrationAlertNotifier alertNotifier) {
     this.mappingPort = Objects.requireNonNull(mappingPort, "mappingPort");
+    this.documentStore = Objects.requireNonNull(documentStore, "documentStore");
     this.rules = Objects.requireNonNull(rules, "rules");
     this.store = Objects.requireNonNull(store, "store");
     this.lifecyclePublisher = Objects.requireNonNull(lifecyclePublisher, "lifecyclePublisher");
@@ -102,10 +109,26 @@ public final class InvoiceRegistrationServiceImpl implements InvoiceRegistration
     runRules(new ValidationContext(
             mapped.marker().business(), mapped.marker(), eInvoice,
             mapped.model(), mapped.items(), attachments.files(), attachments.channel()),
-        mapped.marker(), errors);
+        mapped.marker().business(), mapped.feeType(), errors);
+
+    List<InvoiceDocumentPayable> documents = storeDocuments(attachments, eInvoice.getId(), errors);
 
     RegistrationOutcome outcome = RegistrationOutcome.decide(errors);
-    UUID rowId = persist(mapped, attachments, outcome);
+
+    UUID rowId;
+    try {
+      rowId = persist(mapped, documents, outcome);
+    } catch (RuntimeException ex) {
+      // The row is what failed to write, so there is nowhere to record this. An operator still
+      // has to hear about it, and the caller has to learn the invoice was not stored — returning
+      // an outcome here would say it was, and nothing would ever resend it.
+      RegistrationOutcome lost = outcome.withAdditionalError(
+          MappingError.of(ErrorCode.PERSISTENCE_FAILED,
+              "could not store the registration: " + ex.getMessage(), ex));
+      sendAlert(lost, null, eInvoice, mapped.marker());
+      throw new RegistrationFailedException(
+          "registration of '" + eInvoice.getId() + "' was not stored", lost, ex);
+    }
 
     // A publisher failure is found after the verdict, so it cannot go into the list the verdict
     // was built from — that list has already been copied. It is folded onto the outcome instead,
@@ -141,19 +164,64 @@ public final class InvoiceRegistrationServiceImpl implements InvoiceRegistration
     return new Attachments(mapped.embeddedAttachments(), AttachmentChannel.EINVOICE_BODY);
   }
 
-  private record Attachments(List<ExtractedAttachment> files, AttachmentChannel channel) {
+  private record Attachments(List<ExtractedAttachment> files, AttachmentChannel channel) {}
 
-    /** The metadata rows, tagged with the channel that delivered them. */
-    List<InvoiceDocumentPayable> documents() {
-      return files.stream()
-          .map(f -> InvoiceDocumentPayable.fromAttachment(f, channel.name()))
-          .toList();
+  /**
+   * Push each attachment to the document store and record the handle it returns.
+   *
+   * <p>The content does not live in {@code t_invoice_document_payable} — that table holds
+   * metadata and an {@code sg_doc_id}, and the bytes are in SGDoc. Without this step every
+   * document row would carry a null handle forever and the content would be dropped on the
+   * floor, while the row still looked like a document had been received.
+   *
+   * <p><b>The supplier's reference goes up, not SG's.</b> SG's reference does not exist yet —
+   * the store mints it from a sequence when the row is written, which is after this. The
+   * supplier's is what the document actually arrived with, and it is a correlation hint for the
+   * document store rather than the authoritative link; that is
+   * {@code t_invoice_document_payable.invoice_reference}, which the store stamps.
+   *
+   * <p><b>A failed upload does not fail the registration.</b> The row is written with a null
+   * handle and an alert-only error, because refusing the sender's invoice for an outage on this
+   * side would ask them to resend a document that was never the problem. A null handle is the
+   * honest record that something arrived and is not yet retrievable — which is exactly what the
+   * attachment rules need to tell apart from nothing having been sent.
+   */
+  private List<InvoiceDocumentPayable> storeDocuments(Attachments attachments,
+                                                      String providerReference,
+                                                      List<MappingError> errors) {
+    List<InvoiceDocumentPayable> documents = new ArrayList<>(attachments.files().size());
+    for (ExtractedAttachment file : attachments.files()) {
+      InvoiceDocumentPayable document =
+          InvoiceDocumentPayable.fromAttachment(file, attachments.channel().name());
+      try {
+        document.setSgDocId(documentStore.upload(file, providerReference));
+      } catch (ReferentialUnavailableException ex) {
+        errors.add(MappingError.of(ErrorCode.DOCUMENT_UPLOAD_FAILED,
+            "could not store '" + file.filename() + "': " + ex.getMessage(), ex));
+      } catch (RuntimeException ex) {
+        // The port is contracted to raise ReferentialUnavailableException, but an adapter is
+        // still code, and one that throws something else must not lose the whole registration.
+        errors.add(MappingError.of(ErrorCode.DOCUMENT_UPLOAD_FAILED,
+            "document store threw unexpectedly for '" + file.filename() + "': "
+                + ex.getMessage(), ex));
+      }
+      documents.add(document);
     }
+    return documents;
   }
 
   /** Rules are contracted not to throw; this is defence in depth. */
-  private void runRules(ValidationContext ctx, EInvoiceMarker marker, List<MappingError> errors) {
-    for (ValidationRule rule : rules.rulesFor(marker.business())) {
+  /**
+   * Run the rules configured for this business and fee category.
+   *
+   * <p>The resolved fee type is the scope key, falling back to the marker's raw token inside the
+   * registry when nothing resolved. Scoping by business alone would mean a rule that only makes
+   * sense for one kind of work — a trade file, say — either refuses every other kind or has to
+   * be switched off for the whole business.
+   */
+  private void runRules(ValidationContext ctx, Business business, String feeCategory,
+                        List<MappingError> errors) {
+    for (ValidationRule rule : rules.rulesFor(business, feeCategory)) {
       try {
         List<MappingError> ruleErrors = rule.check(ctx);
         if (ruleErrors != null) {
@@ -167,7 +235,7 @@ public final class InvoiceRegistrationServiceImpl implements InvoiceRegistration
   }
 
   /** The rows are always written, success or failure. */
-  private UUID persist(MappingResult mapped, Attachments attachments,
+  private UUID persist(MappingResult mapped, List<InvoiceDocumentPayable> documents,
                        RegistrationOutcome outcome) {
     return store.persist(new PersistRequest(
         mapped.marker().business(),
@@ -176,7 +244,7 @@ public final class InvoiceRegistrationServiceImpl implements InvoiceRegistration
         FLOW_EINVOICE,
         mapped.model(),
         mapped.items(),
-        attachments.documents(),
+        documents,
         outcome));
   }
 

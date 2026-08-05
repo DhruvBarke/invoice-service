@@ -1,6 +1,6 @@
-package com.sg.bootstrap.config;
+package com.sg.caching;
 
-import com.sg.mapper.einvoice.FeeTypeProvider;
+import com.sg.domaininterface.port.out.FeeTypeProvider;
 import java.time.Duration;
 import java.util.Map;
 import java.util.function.Supplier;

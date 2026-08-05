@@ -67,6 +67,9 @@ public final class JdbcExistingInvoicePayableLookup implements ExistingInvoicePa
    * specifically.
    */
   public static class DuplicateCheckException extends RuntimeException {
+    /** Pinned so a rolling deployment cannot make an in-flight instance unreadable. */
+    private static final long serialVersionUID = 1L;
+
     public DuplicateCheckException(String message, Throwable cause) {
       super(message, cause);
     }

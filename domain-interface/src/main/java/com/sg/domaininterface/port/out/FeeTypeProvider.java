@@ -1,4 +1,4 @@
-package com.sg.mapper.einvoice;
+package com.sg.domaininterface.port.out;
 
 import java.util.Map;
 

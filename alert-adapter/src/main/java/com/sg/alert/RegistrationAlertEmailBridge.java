@@ -3,6 +3,7 @@ package com.sg.alert;
 import com.sg.domaininterface.model.alerting.EmailMessage;
 import com.sg.domaininterface.model.einvoice.error.MappingError;
 import com.sg.domaininterface.port.out.AlertEmailPort;
+import com.sg.domaininterface.port.out.AlertRoutingPolicy;
 import com.sg.domaininterface.port.out.RegistrationAlertNotifier;
 import java.lang.System.Logger.Level;
 import java.time.format.DateTimeFormatter;
@@ -38,25 +39,34 @@ public final class RegistrationAlertEmailBridge implements RegistrationAlertNoti
   private static final int CAUSE_CHAIN_LIMIT = 5;
 
   private final AlertEmailPort emailPort;
-  private final List<String> recipients;
-  private final String subjectPrefix;
+  private final AlertRoutingPolicy routing;
 
-  public RegistrationAlertEmailBridge(AlertEmailPort emailPort,
-                                      List<String> recipients,
-                                      String subjectPrefix) {
+  /**
+   * @param routing decides, per business and fee category, whether to alert at all and who to
+   *                tell. A fixed recipient list used to be baked in here, which meant one team's
+   *                inbox received every other team's failures and filtered them into a folder
+   *                nobody reads.
+   */
+  public RegistrationAlertEmailBridge(AlertEmailPort emailPort, AlertRoutingPolicy routing) {
     this.emailPort = Objects.requireNonNull(emailPort, "emailPort");
-    this.recipients = List.copyOf(Objects.requireNonNull(recipients, "recipients"));
-    if (this.recipients.isEmpty()) {
-      throw new IllegalArgumentException("at least one recipient required");
-    }
-    this.subjectPrefix = subjectPrefix == null ? "[invoice-service]" : subjectPrefix;
+    this.routing = Objects.requireNonNull(routing, "routing");
   }
 
   @Override
   public void notify(RegistrationAlertNotifier.RegistrationAlert alert) {
     if (alert == null || alert.errors().isEmpty()) return;
+
+    // The fee category comes off the marker rather than the mapped model: mapping may have
+    // failed outright, and an alert about that failure still has to reach the right team.
+    AlertRoutingPolicy.Route route =
+        routing.routeFor(alert.business(), alert.marker().feeType());
+    if (!route.shouldSend()) {
+      return;
+    }
+
     try {
-      EmailMessage msg = new EmailMessage(recipients, subject(alert), body(alert));
+      EmailMessage msg = new EmailMessage(
+          route.recipients(), subject(route.subjectPrefix(), alert), body(alert));
       emailPort.send(msg);
     } catch (RuntimeException | Error e) {
       LOG.log(Level.WARNING,
@@ -68,7 +78,7 @@ public final class RegistrationAlertEmailBridge implements RegistrationAlertNoti
 
   // ── Formatting ────────────────────────────────────────────────────────────
 
-  private String subject(RegistrationAlertNotifier.RegistrationAlert a) {
+  private String subject(String subjectPrefix, RegistrationAlertNotifier.RegistrationAlert a) {
     StringBuilder s = new StringBuilder(subjectPrefix.length() + 96);
     s.append(subjectPrefix).append(' ')
      .append(a.outcome().status()).append(": ")

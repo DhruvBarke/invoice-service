@@ -385,8 +385,8 @@ class ValidationRulesTest {
           .add(Business.SGSS, a)
           .build();
 
-      assertEquals(List.of(a, b), reg.rulesFor(Business.MARK));
-      assertEquals(List.of(a), reg.rulesFor(Business.SGSS));
+      assertEquals(List.of(a, b), reg.rulesFor(Business.MARK, null));
+      assertEquals(List.of(a), reg.rulesFor(Business.SGSS, null));
       assertEquals(Business.MARK, reg.configuredBusinesses().iterator().next());
       assertEquals(2, reg.configuredBusinesses().size());
     }
@@ -395,9 +395,9 @@ class ValidationRulesTest {
     @DisplayName("an unconfigured business gets the empty set, not a failure")
     void unconfiguredBusinessGetsEmptySet() {
       ValidationRegistry reg = ValidationRegistry.builder().build();
-      assertTrue(reg.rulesFor(Business.GTPS).isEmpty(),
+      assertTrue(reg.rulesFor(Business.GTPS, null).isEmpty(),
           "onboarding a business must not start rejecting its invoices by default");
-      assertTrue(reg.rulesFor(null).isEmpty(), "an unresolved business runs no rules at all");
+      assertTrue(reg.rulesFor(null, null).isEmpty(), "an unresolved business runs no rules at all");
     }
 
     @Test
@@ -408,10 +408,10 @@ class ValidationRulesTest {
           .addForAll(List.of(Business.MARK, Business.SGSS, Business.GTPS), shared)
           .build();
 
-      assertSame(shared, reg.rulesFor(Business.MARK).get(0));
-      assertSame(shared, reg.rulesFor(Business.SGSS).get(0));
-      assertSame(shared, reg.rulesFor(Business.GTPS).get(0));
-      assertTrue(reg.rulesFor(Business.GLBA).isEmpty());
+      assertSame(shared, reg.rulesFor(Business.MARK, null).get(0));
+      assertSame(shared, reg.rulesFor(Business.SGSS, null).get(0));
+      assertSame(shared, reg.rulesFor(Business.GTPS, null).get(0));
+      assertTrue(reg.rulesFor(Business.GLBA, null).isEmpty());
     }
 
     @Test
@@ -428,7 +428,7 @@ class ValidationRulesTest {
       ValidationRegistry reg = ValidationRegistry.builder()
           .add(Business.MARK, c -> List.of()).build();
       assertThrows(UnsupportedOperationException.class,
-          () -> reg.rulesFor(Business.MARK).add(c -> List.of()));
+          () -> reg.rulesFor(Business.MARK, null).add(c -> List.of()));
     }
   }
 }

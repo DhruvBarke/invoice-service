@@ -10,11 +10,13 @@ import com.fasterxml.jackson.core.JsonParser;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.JsonToken;
 import com.fasterxml.jackson.databind.DeserializationContext;
+import com.fasterxml.jackson.core.StreamWriteFeature;
 import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
 import com.fasterxml.jackson.databind.SerializerProvider;
 import com.fasterxml.jackson.databind.deser.std.StdDeserializer;
+import com.fasterxml.jackson.databind.json.JsonMapper;
 import com.fasterxml.jackson.databind.module.SimpleModule;
 import com.fasterxml.jackson.databind.ser.std.StdSerializer;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
@@ -50,23 +52,36 @@ public final class EInvoiceJsonCodec {
 
   private EInvoiceJsonCodec() {}
 
+  /**
+   * Built through {@link JsonMapper#builder()} rather than by calling setters on a bare
+   * {@code ObjectMapper}.
+   *
+   * <p>The builder is the only route to {@link StreamWriteFeature} settings that is not
+   * deprecated — {@code SerializationFeature.WRITE_BIGDECIMAL_AS_PLAIN} has the same effect and
+   * is on its way out. It also produces a mapper that is configured once and never mutated,
+   * which for a static singleton shared across request threads is the difference between a
+   * frozen configuration and one any caller could still change.
+   */
   private static ObjectMapper build() {
-    ObjectMapper m = new ObjectMapper();
-    m.registerModule(new JavaTimeModule());
-    m.disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
-    m.enable(SerializationFeature.WRITE_BIGDECIMAL_AS_PLAIN);
-    m.disable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES);
-    m.enable(DeserializationFeature.ACCEPT_SINGLE_VALUE_AS_ARRAY);
-    m.setSerializationInclusion(JsonInclude.Include.NON_NULL);
-    // Bind by field name, not getter name — the vendored model's fields are the wire contract.
-    m.setVisibility(PropertyAccessor.ALL, JsonAutoDetect.Visibility.NONE);
-    m.setVisibility(PropertyAccessor.FIELD, JsonAutoDetect.Visibility.ANY);
-
     SimpleModule noteModule = new SimpleModule();
     noteModule.addSerializer(NoteEntry.class, new NoteSerializer());
     noteModule.addDeserializer(NoteEntry.class, new NoteDeserializer());
-    m.registerModule(noteModule);
-    return m;
+
+    return JsonMapper.builder()
+        .addModule(new JavaTimeModule())
+        .addModule(noteModule)
+        .disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS)
+        // Without this a BigDecimal amount can serialise as 1.23456E+5, which the receiving side
+        // reads as a string or rejects outright.
+        .enable(StreamWriteFeature.WRITE_BIGDECIMAL_AS_PLAIN)
+        .disable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES)
+        .enable(DeserializationFeature.ACCEPT_SINGLE_VALUE_AS_ARRAY)
+        .serializationInclusion(JsonInclude.Include.NON_NULL)
+        // Bind by field name, not getter name — the vendored model's fields are the wire
+        // contract, and its Lombok getters are not always named after them.
+        .visibility(PropertyAccessor.ALL, JsonAutoDetect.Visibility.NONE)
+        .visibility(PropertyAccessor.FIELD, JsonAutoDetect.Visibility.ANY)
+        .build();
   }
 
   public static ObjectMapper mapper() {
@@ -93,6 +108,9 @@ public final class EInvoiceJsonCodec {
 
   /** Always emits the UBL-compatible {@code "#CODE#TEXT"} string form. */
   static final class NoteSerializer extends StdSerializer<NoteEntry> {
+    /** Pinned so a rolling deployment cannot make an in-flight instance unreadable. */
+    private static final long serialVersionUID = 1L;
+
     NoteSerializer() { super(NoteEntry.class); }
 
     /**
@@ -115,6 +133,9 @@ public final class EInvoiceJsonCodec {
 
   /** Accepts both the {@code "#CODE#TEXT"} string form and the structured object form. */
   static final class NoteDeserializer extends StdDeserializer<NoteEntry> {
+    /** Pinned so a rolling deployment cannot make an in-flight instance unreadable. */
+    private static final long serialVersionUID = 1L;
+
     NoteDeserializer() { super(NoteEntry.class); }
 
     /**

@@ -1,5 +1,6 @@
 package com.sg.mapper.einvoice;
 
+import com.sg.domaininterface.port.out.FeeTypeProvider;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
@@ -378,6 +379,9 @@ public final class FeeTypeMatcher {
 
   /** Thrown by {@link #resolve(String)} when a fee code cannot be resolved. */
   public static class FeeTypeResolutionException extends RuntimeException {
+    /** Pinned so a rolling deployment cannot make an in-flight instance unreadable. */
+    private static final long serialVersionUID = 1L;
+
     public FeeTypeResolutionException(String message) {
       super(message);
     }

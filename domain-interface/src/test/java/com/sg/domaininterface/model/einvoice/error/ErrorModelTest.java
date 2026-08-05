@@ -83,15 +83,28 @@ class ErrorModelTest {
     }
 
     @Test
-    @DisplayName("EMPTY_LINE_ITEMS is the one alert-only code")
-    void emptyLineItemsIsAlertOnly() {
-      assertNull(ErrorCode.EMPTY_LINE_ITEMS.lifecycleEvent(),
-          "users complete the invoice in-app; refusing it would block that");
+    @DisplayName("the alert-only codes are exactly the ones the sender cannot act on")
+    void alertOnlyCodesAreOurFaultsAndIncompleteness() {
       List<ErrorCode> alertOnly = new ArrayList<>();
       for (ErrorCode c : ErrorCode.values()) {
         if (c.lifecycleEvent() == null) alertOnly.add(c);
       }
-      assertEquals(List.of(ErrorCode.EMPTY_LINE_ITEMS), alertOnly);
+
+      // Pinned deliberately. Adding a code with no lifecycle event means deciding the sender
+      // should NOT be told to fix something, and that decision deserves to be made on purpose
+      // rather than by leaving two constructor arguments null.
+      assertEquals(List.of(
+              ErrorCode.DOCUMENT_UPLOAD_FAILED,
+              ErrorCode.EMPTY_LINE_ITEMS,
+              ErrorCode.PERSISTENCE_FAILED),
+          alertOnly);
+
+      assertNull(ErrorCode.EMPTY_LINE_ITEMS.lifecycleEvent(),
+          "users complete the invoice in-app; refusing it would block that");
+      assertNull(ErrorCode.DOCUMENT_UPLOAD_FAILED.lifecycleEvent(),
+          "the sender attached the document; the store would not take it, which is ours to fix");
+      assertNull(ErrorCode.PERSISTENCE_FAILED.lifecycleEvent(),
+          "our database, not their invoice — and there is no row to hang an event on anyway");
     }
 
     @Test

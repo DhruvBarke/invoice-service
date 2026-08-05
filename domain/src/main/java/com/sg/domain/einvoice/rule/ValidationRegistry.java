@@ -5,48 +5,99 @@ import com.sg.domaininterface.rule.einvoice.ValidationRule;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.EnumMap;
+import java.util.HashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 
 /**
- * Immutable per-{@link Business} rule catalogue.
+ * Which rules run, for a given business and fee category.
  *
- * <p>Wires which {@link ValidationRule}s the orchestrator runs for a given business. Each
- * business gets its own ordered list; rules can be shared across businesses (that's the
- * common case) or restricted to one.
+ * <p><b>Two levels of scope, most specific first.</b> A rule set is configured per business and
+ * may be overridden for one fee category within it. Asking for {@code (MARK, CUSTODY)} returns
+ * CUSTODY's set if one is configured and MARK's otherwise.
  *
- * <p><b>Building.</b> Use {@link Builder}. The app-module composition root reads
- * {@code invoice.service.registration.businesses.<BIZ>.rules.<rule-id>=true|false} and calls
- * {@link Builder#add(Business, ValidationRule)} for enabled rules. A rule not added for a
- * business is simply absent — no runtime toggle in the rule itself, which keeps rule bodies
- * pure.
+ * <p>The fee category matters because one business handles work with genuinely different
+ * paperwork. Requiring a trade file across all of MARK would refuse every custody invoice, which
+ * never has one; requiring an attachment across all of SGSS would refuse the internal recharges
+ * that legitimately arrive bare. Before this the only way to express either was to turn the rule
+ * off for the whole business and lose it where it mattered.
  *
- * <p><b>Unknown business.</b> {@link #rulesFor(Business)} returns an empty list when the
- * business isn't configured. Deliberate: onboarding a new business shouldn't accidentally
- * reject every invoice. Ops sees a REGISTERED row and a "business not configured" log line
- * (not an alert — the row is fine).
+ * <p><b>An override replaces, it does not merge.</b> A fee category that configures its own set
+ * gets exactly that set. Merging would make "turn this rule off for CUSTODY" inexpressible — the
+ * business-level entry would keep switching it back on while the config read as though it were
+ * disabled.
+ *
+ * <p>Fee categories match case-insensitively. They arrive from the endpoint marker as whatever
+ * the sender typed, and a config keyed {@code CUSTODY} should not be missed by a marker that
+ * said {@code custody}.
  */
 public final class ValidationRegistry {
 
-  private final Map<Business, List<ValidationRule>> rulesByBusiness;
+  /** Business-level sets, used when no fee category overrides them. */
+  private final Map<Business, List<ValidationRule>> byBusiness;
 
-  private ValidationRegistry(Map<Business, List<ValidationRule>> rulesByBusiness) {
-    Map<Business, List<ValidationRule>> copy = new EnumMap<>(Business.class);
-    for (Map.Entry<Business, List<ValidationRule>> e : rulesByBusiness.entrySet()) {
-      copy.put(e.getKey(), List.copyOf(e.getValue()));
+  /** {@code BUSINESS\0FEECATEGORY} → the set that replaces the business one. */
+  private final Map<String, List<ValidationRule>> byFeeCategory;
+
+  private ValidationRegistry(Map<Business, List<ValidationRule>> byBusiness,
+                             Map<String, List<ValidationRule>> byFeeCategory) {
+    Map<Business, List<ValidationRule>> business = new EnumMap<>(Business.class);
+    byBusiness.forEach((k, v) -> business.put(k, List.copyOf(v)));
+    this.byBusiness = Collections.unmodifiableMap(business);
+
+    Map<String, List<ValidationRule>> fee = new HashMap<>();
+    byFeeCategory.forEach((k, v) -> fee.put(k, List.copyOf(v)));
+    this.byFeeCategory = Collections.unmodifiableMap(fee);
+  }
+
+  /**
+   * The rules to run.
+   *
+   * @param business    the resolved business, or {@code null} when the marker yielded none
+   * @param feeCategory the resolved fee category, or {@code null}
+   * @return the fee category's set when configured, else the business's, else empty. An
+   *         unresolved business runs nothing: there is no sensible default set, and guessing
+   *         would apply one business's policy to another's invoice.
+   */
+  public List<ValidationRule> rulesFor(Business business, String feeCategory) {
+    if (business == null) {
+      return List.of();
     }
-    this.rulesByBusiness = Collections.unmodifiableMap(copy);
+    if (feeCategory != null && !feeCategory.isBlank()) {
+      List<ValidationRule> scoped = byFeeCategory.get(key(business, feeCategory));
+      if (scoped != null) {
+        return scoped;
+      }
+    }
+    return byBusiness.getOrDefault(business, List.of());
   }
 
-  public List<ValidationRule> rulesFor(Business business) {
-    if (business == null) return List.of();
-    return rulesByBusiness.getOrDefault(business, List.of());
+  private static String key(Business business, String feeCategory) {
+    return business.name() + '\0' + feeCategory.trim().toUpperCase(Locale.ROOT);
   }
 
+  /** Every business with a configured rule set. */
   public Set<Business> configuredBusinesses() {
-    return rulesByBusiness.keySet();
+    return byBusiness.keySet();
+  }
+
+  /** The fee categories overriding the given business, upper-cased. */
+  public Set<String> configuredFeeCategories(Business business) {
+    if (business == null) {
+      return Set.of();
+    }
+    String prefix = business.name() + '\0';
+    Set<String> out = new LinkedHashSet<>();
+    for (String k : byFeeCategory.keySet()) {
+      if (k.startsWith(prefix)) {
+        out.add(k.substring(prefix.length()));
+      }
+    }
+    return Collections.unmodifiableSet(out);
   }
 
   public static Builder builder() {
@@ -54,26 +105,56 @@ public final class ValidationRegistry {
   }
 
   public static final class Builder {
-    private final Map<Business, List<ValidationRule>> rules = new EnumMap<>(Business.class);
+    private final Map<Business, List<ValidationRule>> byBusiness = new EnumMap<>(Business.class);
+    private final Map<String, List<ValidationRule>> byFeeCategory = new HashMap<>();
 
     private Builder() {}
 
-    /** Register a rule for one business. Order of {@code add} calls is preserved. */
+    /** Register a rule for a business. Order of {@code add} calls is preserved. */
     public Builder add(Business business, ValidationRule rule) {
       Objects.requireNonNull(business, "business");
       Objects.requireNonNull(rule, "rule");
-      rules.computeIfAbsent(business, k -> new ArrayList<>()).add(rule);
+      byBusiness.computeIfAbsent(business, k -> new ArrayList<>()).add(rule);
+      return this;
+    }
+
+    /**
+     * Register a rule for one fee category within a business, replacing the business set for it.
+     */
+    public Builder add(Business business, String feeCategory, ValidationRule rule) {
+      Objects.requireNonNull(rule, "rule");
+      scope(business, feeCategory).add(rule);
+      return this;
+    }
+
+    /**
+     * Declare a fee category's set without putting anything in it.
+     *
+     * <p>Needed because empty and absent mean different things: absent falls back to the
+     * business, empty runs nothing. Without this there would be no way to switch every rule off
+     * for a single fee category while leaving the business's own set alone.
+     */
+    public Builder addFeeCategoryScope(Business business, String feeCategory) {
+      scope(business, feeCategory);
       return this;
     }
 
     /** Register a rule for every listed business in one call. */
     public Builder addForAll(Iterable<Business> businesses, ValidationRule rule) {
-      for (Business b : businesses) add(b, rule);
+      for (Business b : businesses) {
+        add(b, rule);
+      }
       return this;
     }
 
     public ValidationRegistry build() {
-      return new ValidationRegistry(rules);
+      return new ValidationRegistry(byBusiness, byFeeCategory);
+    }
+
+    private List<ValidationRule> scope(Business business, String feeCategory) {
+      Objects.requireNonNull(business, "business");
+      Objects.requireNonNull(feeCategory, "feeCategory");
+      return byFeeCategory.computeIfAbsent(key(business, feeCategory), k -> new ArrayList<>());
     }
   }
 }

@@ -19,6 +19,9 @@ package com.sg.mapper.report;
  * registration code path can react to the two mapping flows independently.
  */
 public class ReportMappingException extends RuntimeException {
+  /** Pinned so a rolling deployment cannot make an in-flight instance unreadable. */
+  private static final long serialVersionUID = 1L;
+
 
   public ReportMappingException(String message) {
     super(message);

@@ -1,6 +1,8 @@
 package com.sg.bootstrap.config;
 
 import com.sg.alert.RegistrationAlertEmailBridge;
+import com.sg.bootstrap.policy.ConfiguredAlertRoutingPolicy;
+import com.sg.caching.CachingFeeTypeProvider;
 import com.sg.domain.einvoice.InvoiceRegistrationServiceImpl;
 import com.sg.domaininterface.port.in.InvoiceRegistrationService;
 import com.sg.domain.einvoice.rule.AttachmentPresentRule;
@@ -10,6 +12,7 @@ import com.sg.domain.einvoice.rule.LineItemsPresentRule;
 import com.sg.domain.einvoice.rule.ValidationRegistry;
 import com.sg.domaininterface.model.einvoice.Business;
 import com.sg.domaininterface.port.out.EInvoiceMappingPort;
+import com.sg.domaininterface.port.out.AlertRoutingPolicy;
 import com.sg.domaininterface.port.out.ExistingInvoicePayableLookup;
 import com.sg.domaininterface.port.out.InvoicePayableStore;
 import com.sg.domaininterface.port.out.LifecycleEventPublisher;
@@ -19,11 +22,12 @@ import com.sg.domaininterface.port.out.AlertEmailPort;
 import com.sg.domaininterface.rule.einvoice.ValidationRule;
 import com.sg.jpa.adapter.JdbcExistingInvoicePayableLookup;
 import com.sg.domaininterface.port.thirdparty.FeeCategoryReferentialService;
+import com.sg.domaininterface.port.thirdparty.SgDocReferentialService;
 import com.sg.jpa.adapter.JdbcInvoicePayableStore;
 import com.sg.mapper.einvoice.EInvoiceFacadeMapper;
 import com.sg.mapper.einvoice.EInvoiceMappingAdapter;
 import com.sg.mapper.einvoice.FeeTypeMatcher;
-import com.sg.mapper.einvoice.FeeTypeProvider;
+import com.sg.domaininterface.port.out.FeeTypeProvider;
 import com.sg.mapper.einvoice.MultipartExtractionService;
 import java.util.List;
 import java.util.Map;
@@ -93,18 +97,23 @@ public class RegistrationConfig {
     return new JdbcExistingInvoicePayableLookup(dataSource);
   }
 
+  /**
+   * Alert routing, resolved per business and fee category from configuration.
+   *
+   * <p>A scope with alerting off, or with no recipients, is dropped by the policy rather than by
+   * this bean. That is the difference from before: the whole notifier used to collapse to a
+   * no-op when the service-wide recipient list was empty, which silenced every business at once
+   * because one of them had not been configured yet.
+   */
+  @Bean
+  public AlertRoutingPolicy alertRoutingPolicy(RegistrationProperties props) {
+    return new ConfiguredAlertRoutingPolicy(props);
+  }
+
   @Bean
   public RegistrationAlertNotifier registrationAlertNotifier(
-      AlertEmailPort emailPort, RegistrationProperties props) {
-    // Empty recipient list → drop to a no-op so misconfigured environments don't crash on
-    // every failed registration attempt. Ops sees "no recipients" in the DB row error_codes
-    // JSON instead.
-    List<String> recipients = props.getAlert().getRecipients();
-    if (recipients == null || recipients.isEmpty()) {
-      return RegistrationAlertNotifier.none();
-    }
-    return new RegistrationAlertEmailBridge(
-        emailPort, recipients, props.getAlert().getSubjectPrefix());
+      AlertEmailPort emailPort, AlertRoutingPolicy routing) {
+    return new RegistrationAlertEmailBridge(emailPort, routing);
   }
 
   @Bean
@@ -119,14 +128,33 @@ public class RegistrationConfig {
 
     ValidationRegistry.Builder builder = ValidationRegistry.builder();
     for (Business business : Business.values()) {
-      RegistrationProperties.BusinessRules cfg = props.getBusinesses().get(business);
-      if (cfg == null) continue; // no rules configured — this business gets the empty set
-      Set<String> enabled = cfg.enabledRuleIds();
-      for (Map.Entry<String, ValidationRule> e : rulesById.entrySet()) {
-        if (enabled.contains(e.getKey())) {
-          builder.add(business, e.getValue());
+      RegistrationProperties.BusinessConfig cfg = props.getBusinesses().get(business);
+      if (cfg == null) {
+        continue; // not configured — this business runs nothing
+      }
+
+      Set<String> businessRules = cfg.enabledRuleIds();
+      for (Map.Entry<String, ValidationRule> rule : rulesById.entrySet()) {
+        if (businessRules.contains(rule.getKey())) {
+          builder.add(business, rule.getValue());
         }
       }
+
+      // A fee category that configures rules replaces the business set for itself. The scope is
+      // declared even when nothing in it is enabled, because an empty set and an absent one mean
+      // different things — empty runs nothing, absent falls back to the business.
+      cfg.getFeeCategories().forEach((feeCategory, feeConfig) -> {
+        if (!feeConfig.overridesRules()) {
+          return;
+        }
+        builder.addFeeCategoryScope(business, feeCategory);
+        Set<String> feeRules = feeConfig.enabledRuleIds();
+        for (Map.Entry<String, ValidationRule> rule : rulesById.entrySet()) {
+          if (feeRules.contains(rule.getKey())) {
+            builder.add(business, feeCategory, rule.getValue());
+          }
+        }
+      });
     }
     return builder.build();
   }
@@ -149,6 +177,7 @@ public class RegistrationConfig {
   @Bean
   public InvoiceRegistrationService invoiceRegistrationService(
       EInvoiceMappingPort mappingPort,
+      SgDocReferentialService documentStore,
       ValidationRegistry rules,
       InvoicePayableStore store,
       LifecycleEventPublisher lifecyclePublisher,
@@ -156,6 +185,6 @@ public class RegistrationConfig {
     // Declared as the interface, built as the implementation: everything downstream — the
     // controller included — is injected with the interface and never learns which one it got.
     return new InvoiceRegistrationServiceImpl(
-        mappingPort, rules, store, lifecyclePublisher, alertNotifier);
+        mappingPort, documentStore, rules, store, lifecyclePublisher, alertNotifier);
   }
 }

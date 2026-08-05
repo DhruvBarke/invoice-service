@@ -72,7 +72,7 @@ class InvoiceRegistrationServiceTest {
     Stubs.RecordingStore store = new Stubs.RecordingStore();
     InvoiceRegistrationService svc = new InvoiceRegistrationServiceImpl(
         new EInvoiceMappingAdapter(mapper, matcher, new MultipartExtractionService()),
-        rules, store, publisher, notifier);
+        new Stubs.RecordingDocumentStore(), rules, store, publisher, notifier);
     return new Harness(svc, store,
         publisher instanceof Stubs.RecordingPublisher rp ? rp : new Stubs.RecordingPublisher(),
         notifier instanceof Stubs.RecordingNotifier rn ? rn : new Stubs.RecordingNotifier());
@@ -339,9 +339,14 @@ class InvoiceRegistrationServiceTest {
       RegistrationOutcome outcome = h.service()
           .register(Fixtures.loadInvoice("ambiguous-feetype.json"), List.of());
 
-      assertTrue(hasCode(outcome, ErrorCode.FEETYPE_UNRESOLVED));
+      // Its own code, not FEETYPE_UNRESOLVED. Unresolved means the token matched nothing and
+      // the sender should check what they sent; ambiguous means it matched several and they
+      // should send the fuller name. Reporting both the same way sends them looking for a fee
+      // type that is in fact there.
+      assertTrue(hasCode(outcome, ErrorCode.FEETYPE_AMBIGUOUS));
+      assertFalse(hasCode(outcome, ErrorCode.FEETYPE_UNRESOLVED));
       assertEquals(LifecycleEventType.REFUSED, outcome.lifecycleEvent());
-      assertTrue(find(outcome, ErrorCode.FEETYPE_UNRESOLVED).detail().contains("Ambiguous"),
+      assertTrue(find(outcome, ErrorCode.FEETYPE_AMBIGUOUS).detail().contains("Ambiguous"),
           "the failure detail should say WHY, so ops can fix the referential or the marker");
     }
 
@@ -563,12 +568,15 @@ class InvoiceRegistrationServiceTest {
       Stubs.RecordingNotifier notif = new Stubs.RecordingNotifier();
 
       EInvoiceMappingPort port = new EInvoiceMappingAdapter(mapper, matcher, extractor);
+      Stubs.RecordingDocumentStore docs = new Stubs.RecordingDocumentStore();
       assertThrows(NullPointerException.class, () -> new InvoiceRegistrationServiceImpl(
-          null, rules, store, pub, notif));
+          null, docs, rules, store, pub, notif));
       assertThrows(NullPointerException.class, () -> new InvoiceRegistrationServiceImpl(
-          port, null, store, pub, notif));
+          port, null, rules, store, pub, notif));
       assertThrows(NullPointerException.class, () -> new InvoiceRegistrationServiceImpl(
-          port, rules, null, pub, notif));
+          port, docs, null, store, pub, notif));
+      assertThrows(NullPointerException.class, () -> new InvoiceRegistrationServiceImpl(
+          port, docs, rules, null, pub, notif));
       // The adapter guards its own three collaborators, so the use case never sees a half-built
       // mapping stack.
       assertThrows(NullPointerException.class,
@@ -578,9 +586,9 @@ class InvoiceRegistrationServiceTest {
       assertThrows(NullPointerException.class,
           () -> new EInvoiceMappingAdapter(mapper, matcher, null));
       assertThrows(NullPointerException.class, () -> new InvoiceRegistrationServiceImpl(
-          port, rules, store, null, notif));
+          port, docs, rules, store, null, notif));
       assertThrows(NullPointerException.class, () -> new InvoiceRegistrationServiceImpl(
-          port, rules, store, pub, null));
+          port, docs, rules, store, pub, null));
     }
   }
 }

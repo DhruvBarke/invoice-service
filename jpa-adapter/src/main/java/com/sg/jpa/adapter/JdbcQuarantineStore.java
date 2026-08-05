@@ -325,6 +325,9 @@ public final class JdbcQuarantineStore implements QuarantineStore {
     }
 
     public static final class QuarantineStoreException extends RuntimeException {
+        /** Pinned so a rolling deployment cannot make an in-flight instance unreadable. */
+        private static final long serialVersionUID = 1L;
+
         public QuarantineStoreException(String message, Throwable cause) {
             super(message, cause);
         }

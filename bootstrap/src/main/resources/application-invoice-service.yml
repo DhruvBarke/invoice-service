@@ -6,6 +6,23 @@
 invoice:
   service:
 
+    # ---- Referential endpoints --------------------------------------------------------------
+    # Party registration, fee categories and SGDoc all come from referential APIs. There are no
+    # defaults for these URLs on purpose: a default lets the service start pointing at something
+    # that does not exist and fail on the first invoice instead of at boot, which is the more
+    # expensive time to find out.
+    referential:
+      party-base-url: https://referential.example.internal/party-registration/v1
+      fee-category-base-url: https://referential.example.internal/fee-category/v1
+      sg-doc-base-url: https://referential.example.internal/sgdoc/v2
+
+      # The defaults are NOT unlimited, which is what a bare RestTemplate gives you. A
+      # referential that accepts a connection and then stops responding would otherwise hold the
+      # calling thread until the socket gave up; under load that exhausts the request pool and
+      # the whole service stops answering because one dependency is slow.
+      connect-timeout-millis: 3000
+      read-timeout-millis: 10000
+
     # ---- Cache sizing, per key space -------------------------------------------------------
     # Separate because SIRET is usually highest-volume and BDR ids are usually most stable.
     siren:
@@ -71,35 +88,86 @@ invoice:
     # SGAI and other sources bypass this pipeline entirely.
     registration:
 
+      # ---- Alerting ------------------------------------------------------------------------
+      # One comprehensive email per FAILED invoice, listing every captured error. Unlike the
+      # party-registration digest above these are not aggregated: each email is tied to one
+      # t_invoice_payable row an operator needs to open.
+      #
+      # Three settings, each resolved independently and most-specific-first:
+      #   fee category within a business  ->  business  ->  this service-wide block.
+      # Independently, so a business that only wants its own recipients does not have to restate
+      # enabled and subject-prefix to keep them.
+      #
+      # enabled defaults to true when nobody says otherwise. An unconfigured scope going silent
+      # would hide failures in exactly the environments nobody has finished configuring, which is
+      # where they matter most. Errors are stored on the row either way.
       alert:
-        # One comprehensive email per FAILED invoice, listing every captured error. Unlike the
-        # party-registration digest above, these are not aggregated: the email is tied to one
-        # t_invoice_payable row an operator needs to open. Empty list disables alerting (the
-        # errors are still stored on the row).
+        enabled: true
         recipients:
           - invoice-alerts@example.com
         subject-prefix: "[invoice-service]"
 
-      # Per-business rule activation. A rule omitted for a business is DISABLED for it; a
-      # business omitted entirely gets the empty rule set (invoices register unless the mapper
-      # itself fails). Rule ids come from ValidationRule#id().
+      # ---- Validation rules ----------------------------------------------------------------
+      # A rule omitted for a scope is DISABLED there; a business omitted entirely runs nothing.
+      # Rule ids come from ValidationRule#id().
       #
-      # Adding a rule: implement ValidationRule, register it in RegistrationConfig's
-      # rulesById map, then switch it on here per business.
+      # A fee-categories block REPLACES its business's rule set rather than merging with it.
+      # Merging would make "switch this off for CUSTODY" inexpressible: the business entry would
+      # keep turning it back on while this file read as though it were disabled.
+      #
+      # Adding a rule: implement ValidationRule, register it in RegistrationConfig's rulesById
+      # map, then switch it on in the scopes that want it.
       businesses:
         MARK:
           rules:
-            duplicate-invoice: true      # rule 1 — already-REGISTERED provider_reference
-            attachment-present: true     # rule 2 — no attachment in JSON body nor multipart
-            brokerage-trade-file: true   # rule 3 — BROKERAGE_* needs a .csv/.xlsx trade file
-            line-items-present: true     # rule 4 — CUSTODY/EXCHANGE/CLEARING need line items
+            duplicate-invoice: true      # rule 1 - already-REGISTERED provider_reference
+            attachment-present: true     # rule 2 - nothing attached on either channel
+            brokerage-trade-file: true   # rule 3 - BROKERAGE_* needs a .csv/.xlsx trade file
+            line-items-present: true     # rule 4 - CUSTODY/EXCHANGE/CLEARING need line items
+          alert:
+            recipients:
+              - mark-invoice-ops@example.com
+            subject-prefix: "[MARK]"
 
-        # Other businesses share the generic rules but not the MARK-specific brokerage check.
-        # Switch individual rules on as each business's requirements are confirmed.
+          fee-categories:
+            # Custody invoices never carry an attachment and never carry a trade file, so the
+            # two rules that look for them are left out of this set rather than switched off for
+            # the whole of MARK — where brokerage still needs both.
+            CUSTODY:
+              rules:
+                duplicate-invoice: true
+                line-items-present: true
+
+            # Brokerage keeps everything, and routes its alerts to the desk that can act on them.
+            BROKERAGE_PRINCIPAL:
+              rules:
+                duplicate-invoice: true
+                attachment-present: true
+                brokerage-trade-file: true
+                line-items-present: true
+              alert:
+                recipients:
+                  - mark-brokerage@example.com
+                subject-prefix: "[MARK][BROKERAGE]"
+
+        # Other businesses share the generic rules but not MARK's brokerage check. Switch
+        # individual rules on as each business's requirements are confirmed.
         SGSS:
           rules:
             duplicate-invoice: true
             attachment-present: true
+          alert:
+            recipients:
+              - sgss-invoice-ops@example.com
+            subject-prefix: "[SGSS]"
+          fee-categories:
+            # Internal recharges legitimately arrive bare, and nobody wants to be told so.
+            INTERNAL_RECHARGE:
+              rules:
+                duplicate-invoice: true
+              alert:
+                enabled: false
+
         GTPS:
           rules:
             duplicate-invoice: true

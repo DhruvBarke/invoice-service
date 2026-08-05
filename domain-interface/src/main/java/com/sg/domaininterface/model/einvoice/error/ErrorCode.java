@@ -53,6 +53,21 @@ public enum ErrorCode {
       "Business token in the endpoint marker does not match any known Business enum value",
       LifecycleEventType.REFUSED, "NON_CONFORME"),
 
+  /**
+   * The token matched more than one fee type and nothing broke the tie.
+   *
+   * <p>Separate from {@link #FEETYPE_UNRESOLVED} because the two need different answers from the
+   * sender. Unresolved means the token matched nothing — they sent something we do not have.
+   * Ambiguous means they sent something that matches several, and the fix is to send the fuller
+   * name; a bare {@code BROKERAGE} ties between the principal and agency variants. Reporting
+   * both as "unresolved" sends them looking for a fee type that is in fact there.
+   */
+  FEETYPE_AMBIGUOUS(
+      "FEE-002",
+      "Fee type from the endpoint marker matched more than one entry in the referential and "
+          + "could not be resolved to exactly one",
+      LifecycleEventType.REFUSED, "NON_CONFORME"),
+
   FEETYPE_UNRESOLVED(
       "FEE-001",
       "Fee type from the endpoint marker could not be resolved against the fee-type referential",
@@ -81,6 +96,23 @@ public enum ErrorCode {
       "Brokerage business requires a .csv or .xlsx trade file — none found, or file is empty/corrupt",
       LifecycleEventType.SUSPENDED, "JUSTIF_ABS"),
 
+  /**
+   * The document arrived and could not be stored.
+   *
+   * <p>Alert-only, and deliberately not a SUSPENDED event. {@code MISSING_ATTACHMENT} says the
+   * sender did not attach anything, which is theirs to fix; this says they attached something
+   * and the store would not take it, which is ours. Refusing the invoice for our own outage
+   * would ask them to resend a document that was never the problem.
+   *
+   * <p>The row keeps a null {@code sg_doc_id}, which is the honest record that a document
+   * arrived and its content is not yet retrievable.
+   */
+  DOCUMENT_UPLOAD_FAILED(
+      "ATT-002",
+      "An attachment was received but could not be stored in SGDoc. "
+          + "The document row records it with no handle until an upload succeeds.",
+      null, null),
+
   // ── Line items ───────────────────────────────────────────────────────────
   /**
    * Alert-only. The invoice is stored with {@code INCOMPLETE} status so users can add lines
@@ -90,6 +122,23 @@ public enum ErrorCode {
       "LIN-001",
       "No line items found for a fee category that requires them "
           + "(CUSTODY / EXCHANGE / CLEARING). Invoice stored as INCOMPLETE for user completion.",
+      null, null),
+
+  /**
+   * The registration could not be written.
+   *
+   * <p>No lifecycle event, and not because it is minor. A REFUSED or SUSPENDED event tells the
+   * sender to do something about their invoice, and there is nothing wrong with it — the failure
+   * is entirely on this side. Telling them to correct and resend would be wrong twice: it blames
+   * them for our outage, and their resend hits the same broken database.
+   *
+   * <p>Unlike every other code here, this one cannot be recorded on the row it describes: the
+   * row is what failed to write. It reaches an operator through the alert, and the caller is
+   * told the invoice was not stored so it can be sent again once the fault is cleared.
+   */
+  PERSISTENCE_FAILED(
+      "SYS-001",
+      "The registration could not be written to the database. The invoice was NOT stored.",
       null, null),
 
   // ── Generic mapping errors ───────────────────────────────────────────────
