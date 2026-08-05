@@ -3,8 +3,50 @@
 # Adopting into your repo: merge these keys into your existing application.yml, or keep this file
 # and add "invoice-service" to spring.profiles.include.
 
+springdoc:
+  # The spec and the UI. Both are read-only and describe one endpoint; keep them behind whatever
+  # gates the rest of the actuator surface in a deployed environment.
+  api-docs:
+    path: /v3/api-docs
+  swagger-ui:
+    path: /swagger-ui.html
+    # Operations sorted as declared rather than alphabetically: the JSON form is the common case
+    # and should be read first, and alphabetical ordering puts the multipart one above it.
+    operations-sorter: alpha
+    tags-sorter: alpha
+    display-request-duration: true
+
+# Upload limits for the multipart form of the registration endpoint.
+#
+# Spring's own defaults are 1MB per file and 10MB per request, which is below a routine scanned
+# invoice PDF and would reject real traffic. Exceeding these produces a 413 with the limit in the
+# body — see MultipartExceptionHandler; without that handler the container's rejection surfaces as
+# a 500, which is the one status this API tells callers to retry.
+spring:
+  servlet:
+    multipart:
+      max-file-size: 10MB
+      # Higher than max-file-size because a registration may carry several attachments: an invoice
+      # PDF plus a trade file, occasionally more. Capping the request at one file's worth would
+      # reject a legitimate combination that individually fits.
+      max-request-size: 25MB
+
 invoice:
   service:
+
+    # ---- API metadata -----------------------------------------------------------------------
+    # The published spec's version. The server URL is deliberately NOT configured: springdoc
+    # derives it from the incoming request, which follows whatever proxy or ingress the reader
+    # came through. A configured one is only right in the environments that remember to override
+    # it, and confidently wrong in a document people generate clients from in the ones that do not.
+    api:
+      version: 1.0.0
+      # Omitted from the published spec when blank. No licence is declared at all — there is not
+      # one, and an invented licence in a document people generate clients from is a claim nobody
+      # made. Same reasoning for the contact: fill these in and they appear, leave them and the
+      # block is left out rather than filled with a plausible-looking address.
+      contact-name: ""
+      contact-email: ""
 
     # ---- Referential endpoints --------------------------------------------------------------
     # Party registration, fee categories and SGDoc all come from referential APIs. There are no
