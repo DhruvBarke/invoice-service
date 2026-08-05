@@ -95,16 +95,13 @@ class ErrorModelTest {
       // rather than by leaving two constructor arguments null.
       assertEquals(List.of(
               ErrorCode.DOCUMENT_UPLOAD_FAILED,
-              ErrorCode.EMPTY_LINE_ITEMS,
-              ErrorCode.PERSISTENCE_FAILED),
+              ErrorCode.EMPTY_LINE_ITEMS),
           alertOnly);
 
       assertNull(ErrorCode.EMPTY_LINE_ITEMS.lifecycleEvent(),
           "users complete the invoice in-app; refusing it would block that");
       assertNull(ErrorCode.DOCUMENT_UPLOAD_FAILED.lifecycleEvent(),
           "the sender attached the document; the store would not take it, which is ours to fix");
-      assertNull(ErrorCode.PERSISTENCE_FAILED.lifecycleEvent(),
-          "our database, not their invoice — and there is no row to hang an event on anyway");
     }
 
     @Test

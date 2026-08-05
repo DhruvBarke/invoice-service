@@ -23,7 +23,6 @@ import com.sg.domaininterface.rule.einvoice.AttachmentChannel;
 import com.sg.domaininterface.rule.einvoice.ValidationContext;
 import com.sg.domaininterface.rule.einvoice.ValidationRule;
 import com.sg.domaininterface.port.in.InvoiceRegistrationService;
-import com.sg.domaininterface.port.in.RegistrationFailedException;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
@@ -115,20 +114,10 @@ public final class InvoiceRegistrationServiceImpl implements InvoiceRegistration
 
     RegistrationOutcome outcome = RegistrationOutcome.decide(errors);
 
-    UUID rowId;
-    try {
-      rowId = persist(mapped, documents, outcome);
-    } catch (RuntimeException ex) {
-      // The row is what failed to write, so there is nowhere to record this. An operator still
-      // has to hear about it, and the caller has to learn the invoice was not stored — returning
-      // an outcome here would say it was, and nothing would ever resend it.
-      RegistrationOutcome lost = outcome.withAdditionalError(
-          MappingError.of(ErrorCode.PERSISTENCE_FAILED,
-              "could not store the registration: " + ex.getMessage(), ex));
-      sendAlert(lost, null, eInvoice, mapped.marker());
-      throw new RegistrationFailedException(
-          "registration of '" + eInvoice.getId() + "' was not stored", lost, ex);
-    }
+    // A persistence failure is deliberately NOT caught here: the row is what failed to write, so
+    // there is nowhere to record it and nothing useful to return. It propagates to the caller as
+    // whatever the store raised.
+    UUID rowId = persist(mapped, documents, outcome);
 
     // A publisher failure is found after the verdict, so it cannot go into the list the verdict
     // was built from — that list has already been copied. It is folded onto the outcome instead,

@@ -8,7 +8,6 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.sg.domaininterface.model.einvoice.Business;
 import com.sg.domaininterface.model.einvoice.error.RegistrationOutcome;
-import com.sg.domaininterface.port.in.RegistrationFailedException;
 import com.sg.domaininterface.port.out.AlertRoutingPolicy.Route;
 import java.util.ArrayList;
 import java.util.List;
@@ -17,7 +16,7 @@ import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
 /**
- * The routing contract, and the one exception that escapes registration.
+ * The routing contract.
  *
  * <p>{@link Route#shouldSend()} is the whole point of this type: it is the single question every
  * caller asks, and the two ways an alert can be suppressed — switched off, or configured with
@@ -108,34 +107,6 @@ class AlertRoutingPolicyTest {
       AlertRoutingPolicy policy = AlertRoutingPolicy.silent();
       assertFalse(policy.routeFor(Business.MARK, "CUSTODY").shouldSend());
       assertFalse(policy.routeFor(null, null).shouldSend());
-    }
-  }
-
-  @Nested
-  @DisplayName("RegistrationFailedException")
-  class Failures {
-
-    @Test
-    @DisplayName("carries the outcome the caller never got to see")
-    void carriesTheOutcome() {
-      // Thrown only when the row itself could not be written, so there is nowhere in the
-      // database for the reason to live. It travels on the exception instead.
-      RegistrationOutcome outcome = RegistrationOutcome.decide(List.of());
-      Throwable cause = new IllegalStateException("pool exhausted");
-
-      RegistrationFailedException e =
-          new RegistrationFailedException("not stored", outcome, cause);
-
-      assertEquals("not stored", e.getMessage());
-      assertSame(cause, e.getCause());
-      assertSame(outcome, e.outcome());
-    }
-
-    @Test
-    @DisplayName("an outcome is mandatory")
-    void outcomeIsMandatory() {
-      assertThrows(NullPointerException.class,
-          () -> new RegistrationFailedException("not stored", null, null));
     }
   }
 }

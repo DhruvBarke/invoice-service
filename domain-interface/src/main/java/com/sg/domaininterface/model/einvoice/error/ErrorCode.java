@@ -124,23 +124,6 @@ public enum ErrorCode {
           + "(CUSTODY / EXCHANGE / CLEARING). Invoice stored as INCOMPLETE for user completion.",
       null, null),
 
-  /**
-   * The registration could not be written.
-   *
-   * <p>No lifecycle event, and not because it is minor. A REFUSED or SUSPENDED event tells the
-   * sender to do something about their invoice, and there is nothing wrong with it — the failure
-   * is entirely on this side. Telling them to correct and resend would be wrong twice: it blames
-   * them for our outage, and their resend hits the same broken database.
-   *
-   * <p>Unlike every other code here, this one cannot be recorded on the row it describes: the
-   * row is what failed to write. It reaches an operator through the alert, and the caller is
-   * told the invoice was not stored so it can be sent again once the fault is cleared.
-   */
-  PERSISTENCE_FAILED(
-      "SYS-001",
-      "The registration could not be written to the database. The invoice was NOT stored.",
-      null, null),
-
   // ── Generic mapping errors ───────────────────────────────────────────────
   /**
    * Catch-all for any {@link RuntimeException} thrown by the mapping stack that doesn't fit a
