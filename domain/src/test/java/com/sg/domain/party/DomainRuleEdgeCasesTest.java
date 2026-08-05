@@ -60,11 +60,17 @@ class DomainRuleEdgeCasesTest {
     @Test
     @DisplayName("each flag is addressed by its own flow")
     void eachFlagIsFlowScoped() {
-      DetectionPolicy p = new DetectionPolicy(true, false, false, true);
+      DetectionPolicy p = DetectionPolicy.builder()
+          .missingSiret(true, false)
+          .goldenMismatch(false, true)
+          .multipleRegistrations(false, true)
+          .build();
       assertTrue(p.checkMissingSiret(Flow.INBOUND));
       assertFalse(p.checkMissingSiret(Flow.OUTBOUND));
       assertFalse(p.checkGoldenMismatch(Flow.INBOUND));
       assertTrue(p.checkGoldenMismatch(Flow.OUTBOUND));
+      assertFalse(p.checkMultipleRegistrations(Flow.INBOUND));
+      assertTrue(p.checkMultipleRegistrations(Flow.OUTBOUND));
     }
   }
 

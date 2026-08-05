@@ -37,9 +37,15 @@ public class PartyRegistrationConfig {
     @Bean
     public AnomalyDetector anomalyDetector(AlertingProperties props) {
         AlertingProperties.Detection d = props.getDetection();
-        return new AnomalyDetector(new DetectionPolicy(
-                d.isInboundMissingSiret(), d.isOutboundMissingSiret(),
-                d.isInboundGoldenMismatch(), d.isOutboundGoldenMismatch()));
+        // Named setters rather than six positional booleans: the compiler is perfectly happy
+        // with inbound and outbound the wrong way round, and the result is a check running on
+        // exactly the flow it was configured off for.
+        return new AnomalyDetector(DetectionPolicy.builder()
+                .missingSiret(d.isInboundMissingSiret(), d.isOutboundMissingSiret())
+                .goldenMismatch(d.isInboundGoldenMismatch(), d.isOutboundGoldenMismatch())
+                .multipleRegistrations(
+                        d.isInboundMultipleRegistrations(), d.isOutboundMultipleRegistrations())
+                .build());
     }
 
     // ------------------------------------------------------------------ notification

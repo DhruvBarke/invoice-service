@@ -387,12 +387,46 @@ class ContractTypesTest {
     // Inbound and outbound are configured independently on purpose: the same anomaly can be
     // worth quarantining on the way in and merely advisory on the way out. A policy that
     // ignored the flow would apply the stricter of the two to both.
-    DetectionPolicy p = new DetectionPolicy(true, false, false, true);
+    DetectionPolicy p = DetectionPolicy.builder()
+        .missingSiret(true, false)
+        .goldenMismatch(false, true)
+        .multipleRegistrations(true, false)
+        .build();
 
     assertTrue(p.checkMissingSiret(Flow.INBOUND));
     assertFalse(p.checkMissingSiret(Flow.OUTBOUND));
     assertFalse(p.checkGoldenMismatch(Flow.INBOUND));
     assertTrue(p.checkGoldenMismatch(Flow.OUTBOUND));
+    assertTrue(p.checkMultipleRegistrations(Flow.INBOUND));
+    assertFalse(p.checkMultipleRegistrations(Flow.OUTBOUND));
+  }
+
+  @Test
+  @DisplayName("the builder defaults every advisory check on, bar the outbound golden mismatch")
+  void detectionPolicyDefaults() {
+    DetectionPolicy defaults = DetectionPolicy.defaults();
+
+    assertTrue(defaults.inboundMissingSiret());
+    assertTrue(defaults.outboundMissingSiret());
+    assertTrue(defaults.inboundGoldenMismatch());
+    assertFalse(defaults.outboundGoldenMismatch(),
+        "an outbound lookup is often made with an elementary id deliberately");
+    assertTrue(defaults.inboundMultipleRegistrations());
+    assertTrue(defaults.outboundMultipleRegistrations());
+  }
+
+  @Test
+  @DisplayName("mandatoryOnly leaves only the checks a policy cannot turn off")
+  void detectionPolicyMandatoryOnly() {
+    DetectionPolicy mandatory = DetectionPolicy.mandatoryOnly();
+
+    for (Flow flow : Flow.values()) {
+      assertFalse(mandatory.checkMissingSiret(flow));
+      assertFalse(mandatory.checkGoldenMismatch(flow));
+      assertFalse(mandatory.checkMultipleRegistrations(flow));
+    }
+    // Not "nothing is detected": a party that cannot be served still blocks, because that is
+    // not something a policy is allowed to switch off.
   }
 
   @Test

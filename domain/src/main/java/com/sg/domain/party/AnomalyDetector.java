@@ -44,7 +44,11 @@ public final class AnomalyDetector {
             return found;
         }
 
-        if (!keySpace.isMultiValued() && response.size() > 1) {
+        // Advisory, and now configurable per flow like the other two advisory checks. A golden
+        // record is still selected deterministically, so the lookup has an answer; what this
+        // reports is that upstream deduplication disagreed with itself.
+        if (policy.checkMultipleRegistrations(flow)
+                && !keySpace.isMultiValued() && response.size() > 1) {
             found.add(Anomaly.of(AnomalyType.MULTIPLE_REGISTRATIONS,
                     keySpace + "=" + lookupKey + " is single-valued but returned "
                             + response.size() + " registration details",

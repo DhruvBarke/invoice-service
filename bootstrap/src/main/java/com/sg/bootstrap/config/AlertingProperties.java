@@ -35,13 +35,26 @@ public class AlertingProperties {
     public Email getEmail() { return email; }
     public Quarantine getQuarantine() { return quarantine; }
 
-    /** Governs what is DETECTED, RECORDED and BLOCKED. The mandatory checks are not configurable. */
+    /**
+     * Governs what is DETECTED, RECORDED and BLOCKED.
+     *
+     * <p>The two blocking checks — nothing returned, and a record with no usable SIREN — are not
+     * here and cannot be switched off. Disabling either would not make the data usable; it would
+     * only stop anyone being told, and the invoice would register against a party that does not
+     * exist.
+     */
     public static class Detection {
         private boolean inboundMissingSiret = true;
         private boolean outboundMissingSiret = true;
         private boolean inboundGoldenMismatch = true;
         /** Off by default: an outbound lookup often carries an elementary id deliberately. */
         private boolean outboundGoldenMismatch = false;
+
+        /** Several parties for one SIREN. Advisory — a golden record is still selected. */
+        private boolean inboundMultipleRegistrations = true;
+
+        /** Several parties for one BDR id. */
+        private boolean outboundMultipleRegistrations = true;
 
         public boolean isInboundMissingSiret() { return inboundMissingSiret; }
         public void setInboundMissingSiret(boolean v) { this.inboundMissingSiret = v; }
@@ -51,6 +64,14 @@ public class AlertingProperties {
         public void setInboundGoldenMismatch(boolean v) { this.inboundGoldenMismatch = v; }
         public boolean isOutboundGoldenMismatch() { return outboundGoldenMismatch; }
         public void setOutboundGoldenMismatch(boolean v) { this.outboundGoldenMismatch = v; }
+        public boolean isInboundMultipleRegistrations() { return inboundMultipleRegistrations; }
+        public void setInboundMultipleRegistrations(boolean v) {
+            this.inboundMultipleRegistrations = v;
+        }
+        public boolean isOutboundMultipleRegistrations() { return outboundMultipleRegistrations; }
+        public void setOutboundMultipleRegistrations(boolean v) {
+            this.outboundMultipleRegistrations = v;
+        }
     }
 
     /** Governs only what is SENT. Never affects detection, recording or blocking. */

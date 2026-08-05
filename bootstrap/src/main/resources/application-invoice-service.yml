@@ -46,13 +46,29 @@ invoice:
       enabled: true
 
       # ---- What is DETECTED, RECORDED and BLOCKED ----------------------------------------
-      # The mandatory checks (nothing returned, missing SIREN, multiple records for a
-      # single-valued key) always run and are not configurable.
+      # Turning a check off here means no quarantine row is ever created for it and no
+      # correction is ever possible. This is NOT the way to reduce email — that is
+      # alerting.email below.
+      #
+      # The two BLOCKING checks are absent on purpose and cannot be switched off:
+      #   - the referential returned nothing for the key
+      #   - a returned record has no usable SIREN
+      # Neither is advisory. Disabling them would not make the data usable; it would only stop
+      # anyone being told, and the invoice would register against a party that does not exist.
       detection:
         inbound-missing-siret: true
         outbound-missing-siret: true
         inbound-golden-mismatch: true
         outbound-golden-mismatch: false   # elementary ids are used deliberately outbound
+
+        # Several parties returned for one key: inbound that is one SIREN resolving to more than
+        # one registration, outbound one BDR id doing the same. Advisory rather than blocking —
+        # a golden record is still selected deterministically, so the lookup has an answer. What
+        # the anomaly records is that upstream deduplication disagreed with itself and the
+        # selection was a genuine choice. Switch off where duplicates are expected and
+        # understood, and the quarantine table stops filling with them.
+        inbound-multiple-registrations: true
+        outbound-multiple-registrations: true
 
       # ---- What is EMAILED. Never affects blocking. ---------------------------------------
       email:
