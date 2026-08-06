@@ -228,24 +228,6 @@ class MapperBoundaryCasesTest {
         "a taxable base alone is enough to report a zero-rated subtotal");
   }
 
-  // ── InvoiceInboundFacadeMapper: the SIRET accessor ────────────────────────
-
-  @Test
-  @DisplayName("the inbound facade resolves a supplier by SIRET, and tolerates absence")
-  void inboundFacadeBySiret() {
-    PartyRegistrationDetails acme = new PartyRegistrationDetails(
-        "ELEM-9", "Lyon", "LYON", "TP-1", "Acme SA", "ACME",
-        "BDR-G-001", "Acme SA", "ACME", "123456789", "12345678900012", List.of());
-
-    InvoiceInboundFacadeMapper found = new InvoiceInboundFacadeMapper(lookup(acme));
-    Optional<InvoiceParty> party = found.mapSupplierBySiret("12345678900012");
-    assertTrue(party.isPresent());
-    assertEquals("BDR-G-001", party.orElseThrow().registrationId(),
-        "registration keys on the golden id even when resolved by SIRET");
-
-    assertTrue(new InvoiceInboundFacadeMapper(lookup(null))
-        .mapSupplierBySiret("12345678900012").isEmpty());
-  }
 
   private static PartyRegistrationLookup lookup(PartyRegistrationDetails result) {
     return new PartyRegistrationLookup() {

@@ -3,8 +3,6 @@ package com.sg.mapper.einvoice;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
-import static org.junit.jupiter.api.Assertions.assertSame;
-import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.sg.mapper.einvoice.DocumentReferenceMapper.AttachmentPayload;
@@ -13,7 +11,6 @@ import com.sg.domaininterface.model.invoice.AccountingSupplierParty;
 import com.sg.domaininterface.model.invoice.AdditionalDocumentReference;
 import com.sg.domaininterface.model.invoice.CodedValue;
 import com.sg.domaininterface.model.invoice.CurrencyAmount;
-import com.sg.domaininterface.model.invoice.Invoice;
 import com.sg.domaininterface.model.invoice.InvoiceLine;
 import com.sg.domaininterface.model.invoice.Item;
 import com.sg.domaininterface.model.invoice.LegalMonetaryTotal;
@@ -25,15 +22,12 @@ import com.sg.domaininterface.model.invoice.TaxTotal;
 import com.sg.domaininterface.model.payableinvoice.InvoiceItem;
 import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
-import java.time.LocalDate;
 import java.util.List;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
-import org.junit.jupiter.params.provider.NullAndEmptySource;
-import org.junit.jupiter.params.provider.ValueSource;
 
 /** The einvoice sub-mappers: types, amounts, dates, parties, lines and attachments. */
 class EInvoiceMappersTest {
@@ -85,32 +79,6 @@ class EInvoiceMappersTest {
   }
 
   // ── DateMapper ────────────────────────────────────────────────────────────
-
-  @Nested
-  @DisplayName("DateMapper")
-  class Dates {
-
-    @Test
-    @DisplayName("an ISO date round-trips")
-    void isoRoundTrip() {
-      assertEquals(LocalDate.of(2026, 4, 14), DateMapper.parse("2026-04-14"));
-      assertEquals("2026-04-14", DateMapper.format(LocalDate.of(2026, 4, 14)));
-    }
-
-    @ParameterizedTest
-    @NullAndEmptySource
-    @ValueSource(strings = {"   ", "14/04/2026", "not-a-date", "2026-13-45"})
-    @DisplayName("anything unparseable yields null rather than throwing mid-mapping")
-    void unparseableYieldsNull(String raw) {
-      assertNull(DateMapper.parse(raw));
-    }
-
-    @Test
-    @DisplayName("formatting a null date yields null")
-    void formatNull() {
-      assertNull(DateMapper.format(null));
-    }
-  }
 
   // ── AmountMapper ──────────────────────────────────────────────────────────
 
@@ -583,20 +551,8 @@ class EInvoiceMappersTest {
   // ── Exceptions and the service facade ─────────────────────────────────────
 
   @Nested
-  @DisplayName("exceptions and the facade")
-  class Facade {
-
-    @Test
-    @DisplayName("the mapping exception carries a message and an optional cause")
-    void mappingException() {
-      EInvoiceMappingException plain = new EInvoiceMappingException("broke");
-      assertEquals("broke", plain.getMessage());
-      assertNull(plain.getCause());
-
-      Exception cause = new IllegalStateException("root");
-      EInvoiceMappingException wrapped = new EInvoiceMappingException("broke", cause);
-      assertSame(cause, wrapped.getCause());
-    }
+  @DisplayName("exceptions")
+  class Exceptions {
 
     @Test
     @DisplayName("the fee-type resolution exception carries its reason")
@@ -604,20 +560,5 @@ class EInvoiceMappersTest {
       assertEquals("why", new FeeTypeMatcher.FeeTypeResolutionException("why").getMessage());
     }
 
-    @Test
-    @DisplayName("the service delegates both directions and demands its collaborators")
-    void serviceDelegates() {
-      EInvoiceFacadeMapper facade =
-          new EInvoiceFacadeMapper(TestLookups.alwaysFinds());
-      MultipartExtractionService extractor = new MultipartExtractionService();
-      EInvoiceMappingService service = new EInvoiceMappingService(facade, extractor);
-
-      assertNull(service.toEInvoice(null, List.of(), null, null));
-      assertNull(service.toInvoicePayable(null).model());
-      assertTrue(service.extractAttachments(new Invoice()).isEmpty());
-
-      assertThrows(NullPointerException.class, () -> new EInvoiceMappingService(null, extractor));
-      assertThrows(NullPointerException.class, () -> new EInvoiceMappingService(facade, null));
-    }
   }
 }

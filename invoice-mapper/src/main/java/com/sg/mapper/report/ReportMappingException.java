@@ -15,7 +15,7 @@ package com.sg.mapper.report;
  * the referential lookup for one of the parties failed.
  *
  * <p>Distinct from
- * {@link com.sg.mapper.einvoice.EInvoiceMappingException} so error handlers in the
+ * the einvoice mapping failures so error handlers in the
  * registration code path can react to the two mapping flows independently.
  */
 public class ReportMappingException extends RuntimeException {
