@@ -140,14 +140,24 @@ class InvoiceRegistrationServiceTest {
     }
 
     @Test
-    @DisplayName("fee category is copied onto the payable model, not just the row")
-    void feeCategorySeededOntoModel() {
+    @DisplayName("the resolved fee identity reaches the row, in both halves")
+    void feeIdentityReachesTheRow() {
       Harness h = harness(markRules(false));
       h.service().register(Fixtures.loadInvoice("custody-with-lines.json"), List.of());
 
       InvoicePayableStore.PersistRequest req = h.store().last.get();
-      assertEquals("CUSTODY", req.model().getFeeCategory());
-      assertEquals("F01", req.model().getInvoicePayable().getFeeCategoryCode());
+
+      // The id goes to the column, the name goes to the json field of the same name. Backwards
+      // to read and deliberate: it is the shape every existing row holds, and writing the name
+      // into the column would make the e-invoicing rows the only ones a query on it could not
+      // find.
+      assertEquals("F01", req.model().getFeeCategory());
+      assertEquals("CUSTODY", req.model().getInvoicePayable().getFeeCategory());
+
+      // Not derivable from a two-column feeId->feeCategory map. Production holds a mnemonic
+      // (BKP, EBK, BKA, FNS) that also prefixes the invoice reference; writing the id or a
+      // constant there put a value in the field that no existing row carries.
+      assertNull(req.model().getInvoicePayable().getFeeCategoryCode());
     }
   }
 

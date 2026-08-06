@@ -79,6 +79,12 @@ class EInvoiceMappingAdapterTest {
     return new EInvoiceMappingAdapter(m, f, e);
   }
 
+  /** An adapter whose fee referential holds exactly the given {@code feeId -> feeCategory}. */
+  private static EInvoiceMappingAdapter adapterWithFees(java.util.Map<String, String> fees) {
+    return adapter(new EInvoiceFacadeMapper(lookup()), new FeeTypeMatcher(() -> fees),
+        new MultipartExtractionService());
+  }
+
   /** An invoice whose receiver endpoint carries {@code marker}. */
   private static Invoice invoiceWithMarker(String marker) {
     Invoice inv = new Invoice();
@@ -112,11 +118,74 @@ class EInvoiceMappingAdapterTest {
 
       assertEquals("F01", r.feeId());
       assertEquals("CUSTODY", r.feeType());
+
       // The point of moving the matcher into mapping: the model is complete when mapping ends,
       // with nothing left for a later step to patch onto it.
-      assertEquals("CUSTODY", r.model().getFeeCategory());
-      assertEquals("F01", r.model().getInvoicePayable().getFeeCategoryCode());
+      //
+      // The ID lands on the field called feeCategory and the NAME lands on the json field of the
+      // same name. That reads backwards and is deliberate — it is the shape every existing row
+      // holds (fee_category "11" / feeCategory "Brokerage Principal"), and writing the name into
+      // the column would make the e-invoicing rows the only ones a query on it could not find.
+      assertEquals("F01", r.model().getFeeCategory(), "the column takes the id");
+      assertEquals("CUSTODY", r.model().getInvoicePayable().getFeeCategory(),
+          "the json field takes the name");
       assertTrue(r.errors().isEmpty());
+    }
+
+    @Test
+    @DisplayName("a numeric fee id also reaches feeBdrId, as a number")
+    void numericFeeIdReachesFeeBdrId() {
+      // feeBdrId is an Integer because that is what the existing jsonb holds: "feeBdrId": 11,
+      // not "11". A string there would give the field two shapes for readers to handle.
+      MappingResult r = adapterWithFees(java.util.Map.of("11", "BROKERAGE_PRINCIPAL"))
+          .map(invoiceWithMarker("552120222_MARK_BROKERAGE_PRINCIPAL"));
+
+      assertEquals("11", r.model().getFeeCategory());
+      assertEquals("BROKERAGE_PRINCIPAL", r.model().getInvoicePayable().getFeeCategory());
+      assertEquals(Integer.valueOf(11), r.model().getInvoicePayable().getFeeBdrId());
+    }
+
+    @Test
+    @DisplayName("a non-numeric fee id leaves feeBdrId unset without failing the invoice")
+    void nonNumericFeeIdLeavesFeeBdrIdUnset() {
+      // A referential that stops using numeric ids breaks every invoice at once. Refusing them
+      // would take the whole inbound flow down for one configuration problem, so the id still
+      // reaches fee_category — the column anything queries — and only the json number is absent.
+      MappingResult r = adapterWithFees(java.util.Map.of("F01", "CUSTODY"))
+          .map(invoiceWithMarker("552120222_MARK_CUSTODY"));
+
+      assertEquals("F01", r.model().getFeeCategory(), "the row is still findable by its id");
+      assertEquals("CUSTODY", r.model().getInvoicePayable().getFeeCategory());
+      assertNull(r.model().getInvoicePayable().getFeeBdrId());
+      assertTrue(r.errors().isEmpty(), "not the sender's problem, so not their refusal");
+    }
+
+    @Test
+    @DisplayName("a null fee id is treated like a non-numeric one")
+    void nullFeeIdLeavesFeeBdrIdUnset() {
+      // The REST client drops entries with no id, but FeeTypeProvider is an interface and the
+      // matcher indexes whatever keys it is handed. A HashMap permits the one null key that
+      // Map.of rejects, which is exactly the case the guard exists for.
+      java.util.Map<String, String> fees = new java.util.HashMap<>();
+      fees.put(null, "CUSTODY");
+
+      MappingResult r = adapterWithFees(fees).map(invoiceWithMarker("552120222_MARK_CUSTODY"));
+
+      assertNull(r.model().getInvoicePayable().getFeeBdrId());
+      assertNull(r.model().getFeeCategory(), "there is no id to record");
+    }
+
+    @Test
+    @DisplayName("a blank fee id is treated like a non-numeric one")
+    void blankFeeIdLeavesFeeBdrIdUnset() {
+      // FeeTypeMatcher indexes whatever keys the referential map carries, blank ones included —
+      // it does not filter them — so this arrives here rather than being impossible.
+      MappingResult r = adapterWithFees(java.util.Map.of("  ", "CUSTODY"))
+          .map(invoiceWithMarker("552120222_MARK_CUSTODY"));
+
+      assertNull(r.model().getInvoicePayable().getFeeBdrId());
+      assertEquals("CUSTODY", r.model().getInvoicePayable().getFeeCategory(),
+          "the name still resolved, so it is still recorded");
     }
 
     @Test

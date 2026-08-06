@@ -6,6 +6,8 @@ import com.sg.domaininterface.model.einvoice.error.ErrorCode;
 import com.sg.domaininterface.model.einvoice.error.MappingError;
 import com.sg.domaininterface.model.invoice.ExtractedAttachment;
 import com.sg.domaininterface.model.invoice.Invoice;
+import com.sg.domaininterface.model.payableinvoice.InvoicePayableModel;
+import com.sg.domaininterface.model.payableinvoice.InvoicePayable;
 import com.sg.domaininterface.port.out.EInvoiceMappingPort;
 import com.sg.domaininterface.port.out.PartyRegistrationUnavailableException;
 import com.sg.mapper.einvoice.EInvoiceFacadeMapper.MappedResult;
@@ -51,6 +53,9 @@ import java.util.Objects;
  * already reported success on steps 1 to 4.
  */
 public final class EInvoiceMappingAdapter implements EInvoiceMappingPort {
+
+  private static final System.Logger LOG =
+      System.getLogger(EInvoiceMappingAdapter.class.getName());
 
   private final EInvoiceFacadeMapper facadeMapper;
   private final FeeTypeMatcher feeTypeMatcher;
@@ -172,8 +177,50 @@ public final class EInvoiceMappingAdapter implements EInvoiceMappingPort {
     if (feeMatch == null || mapped.model() == null) {
       return;
     }
-    mapped.model().setFeeCategory(feeMatch.feeType());
-    mapped.model().getInvoicePayable().setFeeCategoryCode(feeMatch.feeId());
+    InvoicePayableModel model = mapped.model();
+    InvoicePayable payable = model.getInvoicePayable();
+
+    // The referential answers feeId -> feeCategory. Both halves are recorded, in the three places
+    // the existing rows use them:
+    //
+    //   t_invoice_payable.fee_category   <- model.feeCategory   = the ID
+    //   invoice_payable.feeBdrId (jsonb) <- the ID, as a number
+    //   invoice_payable.feeCategory      <- the NAME
+    //
+    // The id lands on the column called fee_category, and the name lands on the json field of the
+    // same name. That reads backwards and is not a mistake: it is what every existing row holds
+    // (fee_category "11" / feeCategory "Brokerage Principal"), and matching it is the whole point.
+    // Writing the name into the column would make the e-invoicing rows the only ones a query on
+    // that column could not find.
+    model.setFeeCategory(feeMatch.feeId());
+    payable.setFeeCategory(feeMatch.feeType());
+    payable.setFeeBdrId(numericFeeId(feeMatch.feeId()));
+  }
+
+  /**
+   * The fee id as the number {@code feeBdrId} holds, or null when it is not one.
+   *
+   * <p>{@code feeBdrId} is an {@code Integer} because that is what the existing jsonb contains —
+   * {@code "feeBdrId": 11}, not {@code "11"} — and writing a string there would give the column
+   * two shapes for readers to handle.
+   *
+   * <p><b>Logged, not raised.</b> A non-numeric fee id means the referential changed shape, which
+   * is true for every invoice at once: turning it into a per-invoice error would refuse or alert
+   * on the whole inbound flow for one configuration problem. The id itself still reaches
+   * {@code fee_category}, which is the column anything queries, so the row remains findable.
+   */
+  private static Integer numericFeeId(String feeId) {
+    if (feeId == null || feeId.isBlank()) {
+      return null;
+    }
+    try {
+      return Integer.valueOf(feeId.trim());
+    } catch (NumberFormatException e) {
+      LOG.log(System.Logger.Level.WARNING,
+          "fee id '" + feeId + "' is not numeric, so feeBdrId is left unset. Every invoice "
+              + "resolving to this fee type is affected — check the fee referential.");
+      return null;
+    }
   }
 
   /**

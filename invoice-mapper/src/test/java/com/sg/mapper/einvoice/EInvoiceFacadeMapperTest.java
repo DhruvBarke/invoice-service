@@ -230,7 +230,9 @@ class EInvoiceFacadeMapperTest {
       assertEquals(LocalDate.of(2026, 4, 14), m.getInvoiceDate());
       assertEquals("DEBIT", m.getInvoiceType());
       assertEquals("REGISTERED", m.getInvoiceStatus());
-      assertEquals("EInvoice", m.getFeeCategory());
+      assertNull(m.getFeeCategory(),
+          "this mapper has no fee referential, so it leaves the fee identity alone. It used "
+              + "to write the constant \"EInvoice\", which is not a fee category that exists");
       assertEquals("EUR", m.getCurrency());
       assertEquals(new BigDecimal("751.85"), m.getAmount());
       assertEquals("552120222", m.getSgEntity());
@@ -240,7 +242,9 @@ class EInvoiceFacadeMapperTest {
       assertEquals("751.85", p.getInvoicedAmount());
       assertEquals(new BigDecimal("125.31"), p.getVatAmount());
       assertEquals(new BigDecimal("20.00"), p.getVatRate());
-      assertEquals("EINV", p.getFeeCategoryCode());
+      assertNull(p.getFeeCategoryCode(),
+          "the real value is a mnemonic like BKP, which the feeId->feeCategory map cannot "
+              + "produce. Writing the constant \"EINV\" put a value there that no row holds");
       assertEquals("CUS0226368", p.getProviderReference(),
           "the e-invoice id lands here, which is what the duplicate check keys on");
     }

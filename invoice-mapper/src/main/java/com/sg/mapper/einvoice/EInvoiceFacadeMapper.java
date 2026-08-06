@@ -159,7 +159,9 @@ public final class EInvoiceFacadeMapper {
     model.setInvoiceDate(inv.getIssueDate());
     model.setInvoiceType(InvoiceTypeMapper.toInvoiceType(inv.getInvoiceTypeCode()));
     model.setInvoiceStatus(INVOICE_STATUS_REGISTERED);
-    model.setFeeCategory(FEE_CATEGORY);
+    // The fee identity is NOT set here. This mapper has no fee referential, so anything it wrote
+    // would be a guess — it used to write the constant "EInvoice", which is not a fee category
+    // that exists. EInvoiceMappingAdapter fills all three fields from the resolved match.
 
     // Provider = supplier, SG = customer.
     String providerSiren =
@@ -190,7 +192,6 @@ public final class EInvoiceFacadeMapper {
     payable.setVatAmount(AmountMapper.firstVatAmount(inv.getTaxTotal()));
     payable.setVatRate(AmountMapper.firstVatRate(inv.getTaxTotal()));
 
-    payable.setFeeCategoryCode(FEE_CATEGORY_CODE);
     // The e-invoice's id, i.e. the SUPPLIER's reference for this invoice. This is the value
     // the duplicate check keys on, and the value quoted back to the peer in a lifecycle event.
     payable.setProviderReference(inv.getId());

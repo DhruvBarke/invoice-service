@@ -35,8 +35,6 @@ public final class Constant {
   public static final String INVOICE_STATUS_REGISTERED = "REGISTERED";
 
   // ── fee-category labels ──────────────────────────────────────────────────
-  public static final String FEE_CATEGORY = "EInvoice";
-  public static final String FEE_CATEGORY_CODE = "EINV";
 
   // ── provider defaults (synthetic) ────────────────────────────────────────
   public static final String PROVIDER_MNEMO = "EINV";
