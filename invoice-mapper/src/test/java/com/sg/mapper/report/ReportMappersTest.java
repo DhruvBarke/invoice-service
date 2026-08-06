@@ -627,6 +627,14 @@ class ReportMappersTest {
       assertThrows(NullPointerException.class, () -> new ReportFacadeMapper(lookup(SG), null));
     }
 
+    @Test
+    @DisplayName("the service delegates to the facade")
+    void serviceDelegates() {
+      ReportMappingService service =
+          new ReportMappingService(new ReportFacadeMapper(lookup(SG), config()));
+      assertEquals("552120222", service.toReport(model(), List.of()).getSgEntity());
+      assertThrows(NullPointerException.class, () -> new ReportMappingService(null));
+    }
 
     @Test
     @DisplayName("the report mapping exception carries a message and an optional cause")
