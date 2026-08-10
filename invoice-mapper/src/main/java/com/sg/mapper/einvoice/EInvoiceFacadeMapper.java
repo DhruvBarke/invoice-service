@@ -5,6 +5,7 @@ import static com.sg.mapper.einvoice.Constant.*;
 import com.sg.mapper.einvoice.DocumentReferenceMapper.AttachmentPayload;
 import com.sg.domaininterface.model.invoice.Invoice;
 import com.sg.domaininterface.model.invoice.LegalMonetaryTotal;
+import com.sg.domaininterface.model.invoice.NoteEntry;
 import com.sg.domaininterface.model.invoice.Period;
 import com.sg.domaininterface.model.invoice.TaxTotal;
 import com.sg.domaininterface.model.payableinvoice.InvoiceItem;
@@ -196,6 +197,18 @@ public final class EInvoiceFacadeMapper {
     // the duplicate check keys on, and the value quoted back to the peer in a lifecycle event.
     payable.setProviderReference(inv.getId());
 
+    // Where the supplier asked to be paid. Read out of the document rather than left null, so the
+    // settlement-instruction comparison has something to compare — see PaymentMeansMapper.
+    PaymentMeansMapper.apply(inv, payable);
+
+    payable.setComments(joinNotes(inv.getNote()));
+
+    // No person captured this invoice, so there is no principal to record. See EINVOICE_USER.
+    model.setCreatedByUser(EINVOICE_USER);
+    model.setLastUpdatedByUser(EINVOICE_USER);
+    payable.setCreatedByUser(EINVOICE_USER);
+    payable.setLastUpdatedByUser(EINVOICE_USER);
+
     // Attachments: left null. MultipartExtractionService produces the raw bytes separately,
     // and the registration endpoint sets these ids after storing the files.
     payable.setInvoicePdfId(null);
@@ -205,6 +218,38 @@ public final class EInvoiceFacadeMapper {
 
     List<InvoiceItem> items = LineItemMapper.toInvoiceItems(inv.getInvoiceLine());
     return new MappedResult(model, items);
+  }
+
+  /**
+   * The supplier's free text (BG-1), flattened onto {@code comments}.
+   *
+   * <p>{@code comments} is the payable's only free-text field, so this is where BT-22 can land.
+   * Keeping the {@code #CODE#} prefix is deliberate: BT-21 qualifies what the note is about, and a
+   * note stripped of it reads as a remark when it may be a payment instruction.
+   *
+   * <p>Several notes are joined rather than truncated to the first. A supplier who sends three is
+   * saying three things, and silently keeping one would be indistinguishable from their having
+   * sent one.
+   */
+  private static String joinNotes(List<NoteEntry> notes) {
+    if (notes == null || notes.isEmpty()) {
+      return null;
+    }
+    StringBuilder joined = new StringBuilder();
+    for (NoteEntry note : notes) {
+      if (note == null) {
+        continue;
+      }
+      String text = note.toUbl();
+      if (text.isBlank()) {
+        continue;
+      }
+      if (joined.length() > 0) {
+        joined.append(System.lineSeparator());
+      }
+      joined.append(text);
+    }
+    return joined.length() == 0 ? null : joined.toString();
   }
 
   /**

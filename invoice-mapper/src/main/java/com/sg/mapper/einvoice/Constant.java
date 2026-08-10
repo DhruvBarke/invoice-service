@@ -34,7 +34,33 @@ public final class Constant {
   // ── invoice-status labels ────────────────────────────────────────────────
   public static final String INVOICE_STATUS_REGISTERED = "REGISTERED";
 
+  /**
+   * The value written to {@code created_by_user} / {@code last_updated_by_user}.
+   *
+   * <p>Every other producer of these rows records the person who captured the invoice, taken from
+   * the authenticated principal. Nobody captures an e-invoice — it arrives — so there is no person
+   * to record and the columns were being written null. Null there reads as "the capture user was
+   * lost", which is a defect someone would go looking for; naming the pipeline says plainly that
+   * no person was involved, and matches what {@code invoice_flow} already says about the row.
+   */
+  public static final String EINVOICE_USER = "EINVOICE";
+
   // ── fee-category labels ──────────────────────────────────────────────────
+
+  /**
+   * The two fee categories whose invoices go through trade reconciliation.
+   *
+   * <p>Ids rather than names, because {@code t_invoice_payable.fee_category} holds the id. Taken
+   * from the manual registration path, which is what decides this today; a row that skips the
+   * decision is one reconciliation never picks up.
+   */
+  public static final String ELECTRONIC_BROKER_FEE_CATEGORY_ID = "73";
+
+  public static final String PRINCIPAL_FEE_CATEGORY_ID = "11";
+
+  // ── reconciliation states ────────────────────────────────────────────────
+  public static final String RECON_TO_BE_PROCESSED = "TO_BE_PROCESSED";
+  public static final String RECON_NOT_APPLICABLE = "NOT_APPLICABLE";
 
   // ── provider defaults (synthetic) ────────────────────────────────────────
   public static final String PROVIDER_MNEMO = "EINV";

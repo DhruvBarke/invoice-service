@@ -1,5 +1,10 @@
 package com.sg.mapper.einvoice;
 
+import static com.sg.mapper.einvoice.Constant.ELECTRONIC_BROKER_FEE_CATEGORY_ID;
+import static com.sg.mapper.einvoice.Constant.PRINCIPAL_FEE_CATEGORY_ID;
+import static com.sg.mapper.einvoice.Constant.RECON_NOT_APPLICABLE;
+import static com.sg.mapper.einvoice.Constant.RECON_TO_BE_PROCESSED;
+
 import com.sg.domaininterface.model.einvoice.EInvoiceMarker;
 import com.sg.domaininterface.model.einvoice.EInvoiceMarkerParser;
 import com.sg.domaininterface.model.einvoice.error.ErrorCode;
@@ -29,8 +34,8 @@ import java.util.Objects;
  *   <li>Resolve its fee-type token through {@link FeeTypeMatcher} into a {@code (feeId, feeType)}
  *       pair.</li>
  *   <li>Map the document into an {@code InvoicePayableModel} plus lines.</li>
- *   <li>Write the resolved fee identity onto the model — {@code feeCategory} and
- *       {@code feeCategoryCode}.</li>
+ *   <li>Write the resolved fee identity onto the model, and the reconciliation verdict that
+ *       follows from it.</li>
  *   <li>Pull the base64 attachments out of the document body.</li>
  * </ol>
  *
@@ -195,6 +200,26 @@ public final class EInvoiceMappingAdapter implements EInvoiceMappingPort {
     model.setFeeCategory(feeMatch.feeId());
     payable.setFeeCategory(feeMatch.feeType());
     payable.setFeeBdrId(numericFeeId(feeMatch.feeId()));
+
+    model.setReconProcess(reconProcessFor(feeMatch.feeId()));
+  }
+
+  /**
+   * Whether this invoice goes to trade reconciliation.
+   *
+   * <p>Two fee categories reconcile against trades; everything else is settled on the invoice
+   * alone. The manual path decides this at registration and the column is what reconciliation
+   * selects on, so a row that leaves it null is one reconciliation never picks up — invisibly,
+   * because nothing else reads the field to notice it is missing.
+   *
+   * <p>Only reached when the fee type resolved. An unresolved fee category leaves this null rather
+   * than defaulting to "not applicable": the invoice is being refused anyway, and writing a
+   * verdict derived from a fee identity we do not have would be a guess that outlives the refusal.
+   */
+  private static String reconProcessFor(String feeId) {
+    return ELECTRONIC_BROKER_FEE_CATEGORY_ID.equals(feeId) || PRINCIPAL_FEE_CATEGORY_ID.equals(feeId)
+        ? RECON_TO_BE_PROCESSED
+        : RECON_NOT_APPLICABLE;
   }
 
   /**

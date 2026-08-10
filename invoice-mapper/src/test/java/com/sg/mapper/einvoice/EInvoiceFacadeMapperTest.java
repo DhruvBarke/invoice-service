@@ -12,8 +12,12 @@ import com.sg.domaininterface.model.invoice.CodedValue;
 import com.sg.domaininterface.model.invoice.CurrencyAmount;
 import com.sg.domaininterface.model.invoice.Invoice;
 import com.sg.domaininterface.model.invoice.InvoiceLine;
+import com.sg.domaininterface.model.invoice.FinancialInstitutionBranch;
 import com.sg.domaininterface.model.invoice.Item;
 import com.sg.domaininterface.model.invoice.LegalMonetaryTotal;
+import com.sg.domaininterface.model.invoice.NoteEntry;
+import com.sg.domaininterface.model.invoice.PayeeFinancialAccount;
+import com.sg.domaininterface.model.invoice.PaymentMeans;
 import com.sg.domaininterface.model.invoice.Period;
 import com.sg.domaininterface.model.payableinvoice.InvoiceItem;
 import com.sg.domaininterface.model.payableinvoice.InvoicePayable;
@@ -21,6 +25,7 @@ import com.sg.domaininterface.model.payableinvoice.InvoicePayableModel;
 import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
+import java.util.Arrays;
 import java.util.List;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -359,6 +364,82 @@ class EInvoiceFacadeMapperTest {
       assertNull(m.getSgEntity());
       assertNull(m.getProviderId(),
           "with no SIREN to look up, there is nothing to fall back to either");
+    }
+
+    @Test
+    @DisplayName("the settlement details are read out of the document")
+    void settlementDetailsAreRead() {
+      // Left null until now, which made the settlement-instruction comparison permanently
+      // unmatched — and made it look like the supplier's details disagreed with the ones on file
+      // rather than like a mapping that never ran. PaymentMeansMapper covers the shapes; this
+      // asserts the facade actually calls it.
+      Invoice inv = einvoice();
+      PayeeFinancialAccount account = new PayeeFinancialAccount();
+      account.setId("FR7630006000011234567890189");
+      FinancialInstitutionBranch branch = new FinancialInstitutionBranch();
+      branch.setId("BNPAFRPP");
+      account.setFinancialInstitutionBranch(branch);
+      PaymentMeans means = new PaymentMeans();
+      means.setPayeeFinancialAccount(List.of(account));
+      inv.setPaymentMeans(List.of(means));
+      inv.setDueDate(LocalDate.of(2026, 5, 14));
+
+      InvoicePayable p = mapper().toInvoicePayable(inv).model().getInvoicePayable();
+      assertEquals("FR7630006000011234567890189", p.getSsiAccountCode());
+      assertEquals("BNPAFRPP", p.getSsiSwiftCode());
+      assertEquals(LocalDate.of(2026, 5, 14), p.getPaymentDueDate());
+    }
+
+    @Test
+    @DisplayName("the supplier's notes land on comments, prefix and all")
+    void notesBecomeComments() {
+      Invoice inv = einvoice();
+      inv.setNote(List.of(
+          new NoteEntry("REG", "Invoice covers April custody"),
+          new NoteEntry(null, "Please quote our reference")));
+
+      String comments = mapper().toInvoicePayable(inv).model().getInvoicePayable().getComments();
+      // The subject code qualifies what the note is about; stripped of it a payment instruction
+      // reads as a remark.
+      assertTrue(comments.contains("#REG#Invoice covers April custody"), comments);
+      assertTrue(comments.contains("Please quote our reference"), comments);
+    }
+
+    @Test
+    @DisplayName("blank, null and absent notes leave comments null rather than empty")
+    void emptyNotesLeaveCommentsNull() {
+      assertNull(mapper().toInvoicePayable(einvoice()).model().getInvoicePayable().getComments(),
+          "the default empty list is not a note");
+
+      Invoice nulled = einvoice();
+      nulled.setNote(null);
+      assertNull(mapper().toInvoicePayable(nulled).model().getInvoicePayable().getComments());
+
+      Invoice blanks = einvoice();
+      blanks.setNote(Arrays.asList(null, new NoteEntry(null, "   "), new NoteEntry(null, null)));
+      assertNull(mapper().toInvoicePayable(blanks).model().getInvoicePayable().getComments(),
+          "an empty string in comments would look like the supplier sent a blank note");
+    }
+
+    @Test
+    @DisplayName("the capture user names the pipeline, because no person captured this")
+    void auditUserIsThePipeline() {
+      // Every other producer records the person who captured the invoice. Nobody captures an
+      // e-invoice, and null in these columns reads as a capture user that got lost.
+      InvoicePayableModel m = mapper().toInvoicePayable(einvoice()).model();
+      assertEquals("EINVOICE", m.getCreatedByUser());
+      assertEquals("EINVOICE", m.getLastUpdatedByUser());
+      assertEquals("EINVOICE", m.getInvoicePayable().getCreatedByUser());
+      assertEquals("EINVOICE", m.getInvoicePayable().getLastUpdatedByUser());
+    }
+
+    @Test
+    @DisplayName("the audit dates are left for the store, which is what knows them")
+    void auditDatesAreLeftToTheStore() {
+      InvoicePayableModel m = mapper().toInvoicePayable(einvoice()).model();
+      assertNull(m.getCreatedDate());
+      assertNull(m.getInvoicePayable().getCreatedDate(),
+          "the creation date belongs to the write, not to the document");
     }
   }
 

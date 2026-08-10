@@ -63,10 +63,17 @@ public final class JdbcInvoicePayableStore implements InvoicePayableStore, Lifec
   /**
    * Prefix applied to the sequence value to form {@code invoice_reference}.
    *
-   * <p>References elsewhere in the system look like {@code "CUS0226368"} — a short alphabetic
-   * prefix and a zero-padded number. Whether e-invoicing rows are meant to carry a prefix, and
-   * what it should be, is unconfirmed, so this is empty and references come out as bare padded
-   * digits. This is the one line to change if a prefix is required.
+   * <p><b>This is empty, and that is a known divergence.</b> The manual path mints its reference
+   * as {@code getNextReference(feeCategoryCode, mm, yy)}, which decodes the shape references
+   * actually have: {@code "CUS0226368"} is {@code CUS} + {@code 02} + {@code 26} + the sequence
+   * value. E-invoicing rows come out as bare padded digits instead, so they are the only rows
+   * whose reference does not say which fee category and which month they belong to.
+   *
+   * <p>It cannot be fixed here alone: the prefix is {@code feeCategoryCode}, a mnemonic like
+   * {@code CUS} or {@code BKP}, and the fee referential answers {@code feeId -> feeCategory} with
+   * no third column to take it from. Closing the gap means the referential carrying the mnemonic
+   * and this class calling the same sequence function the manual path does, so both producers
+   * cannot mint the same reference twice.
    */
   static final String REFERENCE_PREFIX = "";
 
@@ -185,7 +192,7 @@ public final class JdbcInvoicePayableStore implements InvoicePayableStore, Lifec
       c.setAutoCommit(false);
       try {
         String invoiceReference = nextInvoiceReference(c);
-        stampReference(req, id, invoiceReference);
+        stampReference(req, id, invoiceReference, today);
 
         insertModel(c, req, id, invoiceReference, today);
         insertItems(c, req.items(), invoiceReference, today);
@@ -210,11 +217,24 @@ public final class JdbcInvoicePayableStore implements InvoicePayableStore, Lifec
    * <p>Not cosmetic: the alert, the lifecycle payload and anything else that runs after
    * persistence read these off the model, and quoting a reference the row does not have is
    * worse than quoting none.
+   *
+   * <p><b>The audit dates are stamped here too.</b> They belong to the write rather than to the
+   * document, so persistence is the only place that knows them — and the same value has to reach
+   * both the {@code created_date} column and the copy inside the {@code invoice_payable} jsonb.
+   * Leaving the payload's pair null while the columns were populated gave one row two answers to
+   * "when was this created", and the jsonb is what the payable is rebuilt from.
    */
-  private static void stampReference(PersistRequest req, UUID id, String invoiceReference) {
+  private static void stampReference(PersistRequest req, UUID id, String invoiceReference,
+                                     LocalDate today) {
     if (req.model() != null) {
       req.model().setId(id);
       req.model().setInvoiceReference(invoiceReference);
+      req.model().setCreatedDate(today);
+      req.model().setLastUpdatedDate(today);
+      if (req.model().getInvoicePayable() != null) {
+        req.model().getInvoicePayable().setCreatedDate(today);
+        req.model().getInvoicePayable().setLastUpdatedDate(today);
+      }
     }
     for (InvoiceItem item : req.items()) {
       item.setInvReferenceSg(invoiceReference);

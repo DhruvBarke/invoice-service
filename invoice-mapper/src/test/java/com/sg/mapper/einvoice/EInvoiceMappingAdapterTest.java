@@ -189,6 +189,39 @@ class EInvoiceMappingAdapterTest {
     }
 
     @Test
+    @DisplayName("the two reconciling fee categories are marked for reconciliation")
+    void reconcilingFeeCategories() {
+      // The column is what trade reconciliation selects on, and nothing else reads it — so a row
+      // left null is one reconciliation silently never picks up.
+      assertEquals("TO_BE_PROCESSED",
+          adapterWithFees(java.util.Map.of("73", "ELECTRONIC_BROKER"))
+              .map(invoiceWithMarker("552120222_MARK_ELECTRONIC_BROKER"))
+              .model().getReconProcess());
+
+      assertEquals("TO_BE_PROCESSED",
+          adapterWithFees(java.util.Map.of("11", "BROKERAGE_PRINCIPAL"))
+              .map(invoiceWithMarker("552120222_MARK_BROKERAGE_PRINCIPAL"))
+              .model().getReconProcess());
+    }
+
+    @Test
+    @DisplayName("every other fee category is settled on the invoice alone")
+    void nonReconcilingFeeCategories() {
+      assertEquals("NOT_APPLICABLE",
+          adapter().map(invoiceWithMarker("552120222_MARK_CUSTODY")).model().getReconProcess());
+    }
+
+    @Test
+    @DisplayName("an unresolved fee leaves the reconciliation verdict unset, not defaulted")
+    void unresolvedFeeLeavesReconUnset() {
+      // The invoice is being refused anyway. Writing "not applicable" from a fee identity we do
+      // not have would be a guess that outlives the refusal and is indistinguishable from a
+      // decision someone made.
+      assertNull(adapter().map(invoiceWithMarker("552120222_MARK_NOT_A_FEE"))
+          .model().getReconProcess());
+    }
+
+    @Test
     @DisplayName("an unresolvable token is reported but still recorded verbatim")
     void unresolvedFeeKeepsTheRawToken() {
       MappingResult r = adapter().map(invoiceWithMarker("552120222_MARK_NOT_A_FEE"));

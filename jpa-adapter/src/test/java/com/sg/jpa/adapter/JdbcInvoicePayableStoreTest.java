@@ -159,6 +159,34 @@ class JdbcInvoicePayableStoreTest {
     }
 
     @Test
+    @DisplayName("the audit dates are stamped on the model and its payload, not just the columns")
+    void auditDatesAreStamped() {
+      InvoicePayableModel m = model("SUP-INV-1");
+
+      store.persist(request(m, List.of(), List.of(), clean()));
+
+      // The columns were already being written. The copies inside the jsonb were not, so one row
+      // gave two answers to "when was this created" — and the jsonb is what the payable is
+      // rebuilt from.
+      LocalDate today = LocalDate.now();
+      assertEquals(today, m.getCreatedDate());
+      assertEquals(today, m.getLastUpdatedDate());
+      assertEquals(today, m.getInvoicePayable().getCreatedDate());
+      assertEquals(today, m.getInvoicePayable().getLastUpdatedDate());
+    }
+
+    @Test
+    @DisplayName("a model with no payload block still gets its own dates stamped")
+    void auditDatesWithoutPayload() {
+      InvoicePayableModel m = model("SUP-INV-1");
+      m.setInvoicePayable(null);
+
+      store.persist(request(m, List.of(), List.of(), clean()));
+
+      assertEquals(LocalDate.now(), m.getCreatedDate());
+    }
+
+    @Test
     @DisplayName("mapped header fields are written, not dropped")
     void headerFieldsAreWritten() throws SQLException {
       store.persist(request(model("SUP-INV-1"), List.of(), List.of(), clean()));
