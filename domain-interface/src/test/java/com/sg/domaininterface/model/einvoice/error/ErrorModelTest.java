@@ -95,7 +95,19 @@ class ErrorModelTest {
       // rather than by leaving two constructor arguments null.
       assertEquals(List.of(
               ErrorCode.DOCUMENT_UPLOAD_FAILED,
-              ErrorCode.EMPTY_LINE_ITEMS),
+              ErrorCode.EMPTY_LINE_ITEMS,
+              // The account on the invoice disagrees with the one on file. Registered, with
+              // ssi_status holding settlement — exactly as on the manual path. Refusing would
+              // send the invoice back over a disagreement about bank details that is often ours
+              // to resolve rather than the sender's.
+              ErrorCode.SETTLEMENT_DETAILS_UNMATCHED,
+              // Nothing on file at all. That is an onboarding step that never happened here, not
+              // something the sender can put right by resending.
+              ErrorCode.SETTLEMENT_DETAILS_MISSING,
+              // A post-mapping referential was down. None of what it fills decides whether the
+              // invoice is valid, so an outage on our side must not become a batch of refusals
+              // the senders are asked to act on.
+              ErrorCode.ENRICHMENT_UNAVAILABLE),
           alertOnly);
 
       assertNull(ErrorCode.EMPTY_LINE_ITEMS.lifecycleEvent(),

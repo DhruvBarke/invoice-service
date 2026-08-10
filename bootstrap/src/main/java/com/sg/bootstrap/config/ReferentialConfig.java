@@ -1,14 +1,20 @@
 package com.sg.bootstrap.config;
 
+import com.sg.domaininterface.port.thirdparty.BusinessCalendarService;
+import com.sg.domaininterface.port.thirdparty.CurrencyConverterService;
 import com.sg.domaininterface.port.thirdparty.FeeCategoryReferentialService;
 import com.sg.domaininterface.port.thirdparty.PartyReferentialService;
 import com.sg.domaininterface.port.out.AlertEmailPort;
 import com.sg.domaininterface.port.thirdparty.SgDocReferentialService;
+import com.sg.domaininterface.port.thirdparty.SsiReferentialService;
 import com.sg.thirdparties.ReferentialProperties;
+import com.sg.thirdparties.RestBusinessCalendarClient;
+import com.sg.thirdparties.RestCurrencyReferentialClient;
 import com.sg.thirdparties.RestFeeCategoryReferentialClient;
 import com.sg.thirdparties.RestPartyReferentialClient;
 import com.sg.thirdparties.RestEmailReferentialClient;
 import com.sg.thirdparties.RestSgDocReferentialClient;
+import com.sg.thirdparties.RestSsiReferentialClient;
 import java.time.Duration;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.boot.web.client.RestTemplateBuilder;
@@ -46,7 +52,32 @@ public class ReferentialConfig {
     public ReferentialProperties referentialProperties(ReferentialUrlProperties props) {
         return new ReferentialProperties(
                 props.getPartyBaseUrl(), props.getFeeCategoryBaseUrl(), props.getSgDocBaseUrl(),
-                props.getEmailBaseUrl());
+                props.getEmailBaseUrl(), props.getCommonBaseUrl());
+    }
+
+    /**
+     * The rate used to express a foreign-currency invoice in euros.
+     *
+     * <p>Consulted once per non-euro invoice, at registration. Not cached: the rate is asked for
+     * as at a past date, so a cache would be keyed on a date that changes with every invoice and
+     * would hold entries nothing asks for twice.
+     */
+    @Bean
+    public CurrencyConverterService currencyConverterService(
+            RestTemplate referentialRestTemplate, ReferentialProperties properties) {
+        return new RestCurrencyReferentialClient(referentialRestTemplate, properties);
+    }
+
+    @Bean
+    public BusinessCalendarService businessCalendarService(
+            RestTemplate referentialRestTemplate, ReferentialProperties properties) {
+        return new RestBusinessCalendarClient(referentialRestTemplate, properties);
+    }
+
+    @Bean
+    public SsiReferentialService ssiReferentialService(
+            RestTemplate referentialRestTemplate, ReferentialProperties properties) {
+        return new RestSsiReferentialClient(referentialRestTemplate, properties);
     }
 
     @Bean

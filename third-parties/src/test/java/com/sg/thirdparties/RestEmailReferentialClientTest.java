@@ -44,7 +44,7 @@ class RestEmailReferentialClientTest {
     client = new RestEmailReferentialClient(
         restTemplate,
         new ReferentialProperties("https://parties", "https://fees", "https://docs",
-            "https://referential/mail"),
+            "https://referential/mail", "https://common"),
         "invoice-service@example.internal");
   }
 
@@ -139,7 +139,7 @@ class RestEmailReferentialClientTest {
   @DisplayName("collaborators and the message are mandatory")
   void mandatoryArguments() {
     ReferentialProperties props =
-        new ReferentialProperties("https://a", "https://b", "https://c", "https://d");
+        new ReferentialProperties("https://a", "https://b", "https://c", "https://d", "https://common");
 
     assertThrows(NullPointerException.class,
         () -> new RestEmailReferentialClient(null, props, "from@example.com"));

@@ -124,6 +124,49 @@ public enum ErrorCode {
           + "(CUSTODY / EXCHANGE / CLEARING). Invoice stored as INCOMPLETE for user completion.",
       null, null),
 
+  // ── Settlement instructions ──────────────────────────────────────────────
+  /**
+   * The account on the invoice does not match any instruction SG holds for this provider.
+   *
+   * <p>Alert-only, and that is a deliberate match to how the manual path behaves: the invoice is
+   * registered, {@code ssi_status} is left {@code UNMATCHED}, and settlement is what stops. Firing
+   * a REFUSED event instead would be a policy change — it would send the invoice back over a
+   * disagreement about bank details that is often ours to resolve, not the sender's.
+   */
+  SETTLEMENT_DETAILS_UNMATCHED(
+      "SSI-001",
+      "The payment account on the invoice matches no standing settlement instruction held for "
+          + "this provider. The invoice is registered; settlement is held until they agree.",
+      null, null),
+
+  /**
+   * No settlement instruction exists at all for a combination that requires one.
+   *
+   * <p>Distinct from {@link #SETTLEMENT_DETAILS_UNMATCHED}: that one says the details disagree,
+   * this says there is nothing to disagree with. The fixes are different — one is a correction,
+   * the other is an onboarding step that never happened.
+   */
+  SETTLEMENT_DETAILS_MISSING(
+      "SSI-002",
+      "No standing settlement instruction is on file for this provider, currency, entity and "
+          + "fee category.",
+      null, null),
+
+  // ── Enrichment ───────────────────────────────────────────────────────────
+  /**
+   * A referential consulted after mapping was unreachable, and the field it feeds is unset.
+   *
+   * <p>Alert-only. None of these fields decide whether the invoice is valid — they decide what
+   * happens to it afterwards — so an outage in one must not turn into a refusal the sender is
+   * asked to act on. The row records what could not be worked out; the manual path degrades the
+   * same way.
+   */
+  ENRICHMENT_UNAVAILABLE(
+      "ENR-001",
+      "A post-mapping referential (FX rate, business calendar or provider setup) was unavailable, "
+          + "so the field it supplies is unset on the registered row.",
+      null, null),
+
   // ── Generic mapping errors ───────────────────────────────────────────────
   /**
    * Catch-all for any {@link RuntimeException} thrown by the mapping stack that doesn't fit a

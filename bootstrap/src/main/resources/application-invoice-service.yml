@@ -64,6 +64,16 @@ invoice:
       email-base-url: https://referential.example.internal
       email-from-address: invoice-service@example.internal
 
+      # FX rates, the business calendar and settlement instructions. One property for the three
+      # because the manual registration path reaches all of them through a single
+      # referentialServiceApi. It may well be the same host as party-base-url; that is a
+      # deployment question, so it is asked rather than assumed.
+      #
+      # UNCONFIRMED: the paths these clients call are conventions, not transcriptions — no
+      # contract for them has been supplied. See RestCurrencyReferentialClient,
+      # RestBusinessCalendarClient and RestSsiReferentialClient, one constant each.
+      common-base-url: https://referential.example.internal
+
       # The defaults are NOT unlimited, which is what a bare RestTemplate gives you. A
       # referential that accepts a connection and then stops responding would otherwise hold the
       # calling thread until the socket gave up; under load that exhausts the request pool and
@@ -171,6 +181,16 @@ invoice:
           - invoice-alerts@example.com
         subject-prefix: "[invoice-service]"
 
+      # ---- Joint-venture entities ------------------------------------------------------------
+      # Entities whose invoices are paid and booked without consulting the provider-setup table,
+      # because the arrangement is agreed at the entity rather than per provider.
+      #
+      # Empty here on purpose. An entity wrongly on this list is paid without a setup row ever
+      # being checked, so the safe default is to check. The manual path hard-codes four values
+      # (1218656199, 46126901, 1208829220, 32040817) — add them once it is confirmed whether they
+      # are BDR ids or SIRENs, since the e-invoicing path resolves both.
+      joint-venture-entities: []
+
       # ---- Validation rules ----------------------------------------------------------------
       # A rule omitted for a scope is DISABLED there; a business omitted entirely runs nothing.
       # Rule ids come from ValidationRule#id().
@@ -188,6 +208,7 @@ invoice:
             attachment-present: true     # rule 2 - nothing attached on either channel
             brokerage-trade-file: true   # rule 3 - BROKERAGE_* needs a .csv/.xlsx trade file
             line-items-present: true     # rule 4 - CUSTODY/EXCHANGE/CLEARING need line items
+            settlement-instruction: true # rule 5 - invoice's account vs the SSI on file
           alert:
             recipients:
               - mark-invoice-ops@example.com
@@ -201,6 +222,7 @@ invoice:
               rules:
                 duplicate-invoice: true
                 line-items-present: true
+                settlement-instruction: true
 
             # Brokerage keeps everything, and routes its alerts to the desk that can act on them.
             BROKERAGE_PRINCIPAL:
@@ -209,6 +231,7 @@ invoice:
                 attachment-present: true
                 brokerage-trade-file: true
                 line-items-present: true
+                settlement-instruction: true
               alert:
                 recipients:
                   - mark-brokerage@example.com
@@ -220,6 +243,7 @@ invoice:
           rules:
             duplicate-invoice: true
             attachment-present: true
+            settlement-instruction: true
           alert:
             recipients:
               - sgss-invoice-ops@example.com

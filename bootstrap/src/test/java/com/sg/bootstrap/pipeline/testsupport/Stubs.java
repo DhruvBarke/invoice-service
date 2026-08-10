@@ -1,5 +1,6 @@
 package com.sg.bootstrap.pipeline.testsupport;
 
+import com.sg.domain.einvoice.InvoicePayableEnricher;
 import com.sg.domaininterface.model.party.PartyRegistrationDetails;
 import com.sg.domaininterface.port.out.InvoicePayableStore;
 import com.sg.domaininterface.port.out.LifecycleEventPublisher;
@@ -13,6 +14,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -77,6 +79,26 @@ public final class Stubs {
   public static FeeTypeMatcher matcher() {
     Map<String, String> ref = referential();
     return new FeeTypeMatcher(() -> ref);
+  }
+
+  /**
+   * An enricher whose three referentials all answer "nothing".
+   *
+   * <p>The pipeline tests are about what the pipeline does with a document, and enrichment reads
+   * none of it. Live collaborators here would put a euro amount and a re-attachment date into
+   * every assertion on the persisted model without any of those tests being about either;
+   * {@code InvoicePayableEnricherTest} is where that behaviour is pinned down.
+   *
+   * <p>Answering "nothing" rather than throwing matters: a throwing stub would add an
+   * {@code ENRICHMENT_UNAVAILABLE} error to every outcome, and the tests that assert an invoice
+   * registered cleanly would all fail for a reason that has nothing to do with them.
+   */
+  public static InvoicePayableEnricher noEnrichment() {
+    return new InvoicePayableEnricher(
+        (date, currency) -> Optional.empty(),
+        (year, country) -> List.of(),
+        (mnemo, feeCategory, entity) -> Optional.empty(),
+        Set.of());
   }
 
   /**

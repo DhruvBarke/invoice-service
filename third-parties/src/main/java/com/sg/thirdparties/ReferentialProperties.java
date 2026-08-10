@@ -14,18 +14,26 @@ import java.util.Objects;
  * @param feeCategoryBaseUrl base URL of the fee-category referential
  * @param sgDocBaseUrl       base URL of the document store
  * @param emailBaseUrl       base URL of the mail service
+ * @param commonBaseUrl      base URL of the referential serving FX rates, the business calendar
+ *                           and settlement instructions. One property for the three because the
+ *                           manual registration path reaches all of them through a single
+ *                           {@code referentialServiceApi}; they may well share a host with the
+ *                           party and fee referentials too, but that is a deployment question and
+ *                           assuming it here would bake one answer in.
  */
 public record ReferentialProperties(
     String partyBaseUrl,
     String feeCategoryBaseUrl,
     String sgDocBaseUrl,
-    String emailBaseUrl) {
+    String emailBaseUrl,
+    String commonBaseUrl) {
 
   public ReferentialProperties {
     partyBaseUrl = normalise(partyBaseUrl, "partyBaseUrl");
     feeCategoryBaseUrl = normalise(feeCategoryBaseUrl, "feeCategoryBaseUrl");
     sgDocBaseUrl = normalise(sgDocBaseUrl, "sgDocBaseUrl");
     emailBaseUrl = normalise(emailBaseUrl, "emailBaseUrl");
+    commonBaseUrl = normalise(commonBaseUrl, "commonBaseUrl");
   }
 
   /**

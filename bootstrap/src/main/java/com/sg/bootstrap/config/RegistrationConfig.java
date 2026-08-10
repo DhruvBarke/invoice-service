@@ -3,27 +3,35 @@ package com.sg.bootstrap.config;
 import com.sg.alert.RegistrationAlertEmailBridge;
 import com.sg.bootstrap.policy.ConfiguredAlertRoutingPolicy;
 import com.sg.caching.CachingFeeTypeProvider;
+import com.sg.domain.einvoice.InvoicePayableEnricher;
 import com.sg.domain.einvoice.InvoiceRegistrationServiceImpl;
 import com.sg.domaininterface.port.in.InvoiceRegistrationService;
 import com.sg.domain.einvoice.rule.AttachmentPresentRule;
 import com.sg.domain.einvoice.rule.BrokerageTradeFileRule;
 import com.sg.domain.einvoice.rule.DuplicateInvoiceRule;
 import com.sg.domain.einvoice.rule.LineItemsPresentRule;
+import com.sg.domain.einvoice.rule.SettlementInstructionRule;
 import com.sg.domain.einvoice.rule.ValidationRegistry;
 import com.sg.domaininterface.model.einvoice.Business;
 import com.sg.domaininterface.port.out.EInvoiceMappingPort;
 import com.sg.domaininterface.port.out.AlertRoutingPolicy;
 import com.sg.domaininterface.port.out.ExistingInvoicePayableLookup;
+import com.sg.domaininterface.port.out.InvoiceEnrichmentPort;
 import com.sg.domaininterface.port.out.InvoicePayableStore;
 import com.sg.domaininterface.port.out.LifecycleEventPublisher;
 import com.sg.domaininterface.port.out.RegistrationAlertNotifier;
 import com.sg.domaininterface.port.out.PartyRegistrationLookup;
+import com.sg.domaininterface.port.out.ProviderSetupLookup;
 import com.sg.domaininterface.port.out.AlertEmailPort;
 import com.sg.domaininterface.rule.einvoice.ValidationRule;
 import com.sg.jpa.adapter.JdbcExistingInvoicePayableLookup;
+import com.sg.domaininterface.port.thirdparty.BusinessCalendarService;
+import com.sg.domaininterface.port.thirdparty.CurrencyConverterService;
 import com.sg.domaininterface.port.thirdparty.FeeCategoryReferentialService;
 import com.sg.domaininterface.port.thirdparty.SgDocReferentialService;
+import com.sg.domaininterface.port.thirdparty.SsiReferentialService;
 import com.sg.jpa.adapter.JdbcInvoicePayableStore;
+import com.sg.jpa.adapter.JdbcProviderSetupLookup;
 import com.sg.mapper.einvoice.EInvoiceFacadeMapper;
 import com.sg.mapper.einvoice.EInvoiceMappingAdapter;
 import com.sg.mapper.einvoice.FeeTypeMatcher;
@@ -127,14 +135,39 @@ public class RegistrationConfig {
   }
 
   @Bean
+  public ProviderSetupLookup providerSetupLookup(DataSource dataSource) {
+    return new JdbcProviderSetupLookup(dataSource);
+  }
+
+  /**
+   * The fields no document can carry.
+   *
+   * <p>Kept out of the mapper deliberately — see {@link InvoicePayableEnricher}. The joint-venture
+   * list is configuration rather than a constant: it changes when a venture is formed or wound up,
+   * and neither should need a release.
+   */
+  @Bean
+  public InvoicePayableEnricher invoicePayableEnricher(
+      CurrencyConverterService rates,
+      BusinessCalendarService calendar,
+      ProviderSetupLookup providerSetup,
+      RegistrationProperties props) {
+    return new InvoicePayableEnricher(rates, calendar, providerSetup,
+        props.getJointVentureEntities());
+  }
+
+  @Bean
   public ValidationRegistry validationRegistry(
       RegistrationProperties props,
-      ExistingInvoicePayableLookup existingLookup) {
+      ExistingInvoicePayableLookup existingLookup,
+      SsiReferentialService ssiReferential) {
     Map<String, ValidationRule> rulesById = Map.of(
         new DuplicateInvoiceRule(existingLookup).id(), new DuplicateInvoiceRule(existingLookup),
         new AttachmentPresentRule().id(), new AttachmentPresentRule(),
         new BrokerageTradeFileRule().id(), new BrokerageTradeFileRule(),
-        new LineItemsPresentRule().id(), new LineItemsPresentRule());
+        new LineItemsPresentRule().id(), new LineItemsPresentRule(),
+        new SettlementInstructionRule(ssiReferential).id(),
+        new SettlementInstructionRule(ssiReferential));
 
     ValidationRegistry.Builder builder = ValidationRegistry.builder();
     for (Business business : Business.values()) {
@@ -187,6 +220,7 @@ public class RegistrationConfig {
   @Bean
   public InvoiceRegistrationService invoiceRegistrationService(
       EInvoiceMappingPort mappingPort,
+      InvoiceEnrichmentPort enricher,
       SgDocReferentialService documentStore,
       ValidationRegistry rules,
       InvoicePayableStore store,
@@ -195,6 +229,6 @@ public class RegistrationConfig {
     // Declared as the interface, built as the implementation: everything downstream — the
     // controller included — is injected with the interface and never learns which one it got.
     return new InvoiceRegistrationServiceImpl(
-        mappingPort, documentStore, rules, store, lifecyclePublisher, alertNotifier);
+        mappingPort, enricher, documentStore, rules, store, lifecyclePublisher, alertNotifier);
   }
 }

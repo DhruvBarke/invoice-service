@@ -92,8 +92,16 @@ class DocumentUploadTest {
   private static InvoiceRegistrationServiceImpl service(SgDocReferentialService docs,
                                                         CapturingStore store,
                                                         List<ExtractedAttachment> embedded) {
+    // Inert enrichment: this file is about what happens to attachments, and a euro amount or a
+    // calendar lookup in the middle of it would only be noise.
+    InvoicePayableEnricher enricher = new InvoicePayableEnricher(
+        (date, currency) -> java.util.Optional.empty(),
+        (year, country) -> List.of(),
+        (mnemo, fee, entity) -> java.util.Optional.empty(),
+        java.util.Set.of());
+
     return new InvoiceRegistrationServiceImpl(
-        port(embedded), docs, ValidationRegistry.builder().build(), store,
+        port(embedded), enricher, docs, ValidationRegistry.builder().build(), store,
         (LifecycleEventPublisher) e -> { }, (RegistrationAlertNotifier) a -> { });
   }
 

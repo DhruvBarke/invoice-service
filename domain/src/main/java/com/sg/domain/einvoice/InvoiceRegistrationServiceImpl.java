@@ -11,6 +11,7 @@ import com.sg.domaininterface.model.invoice.Invoice;
 import com.sg.domaininterface.model.payableinvoice.InvoiceDocumentPayable;
 import com.sg.domaininterface.port.out.EInvoiceMappingPort.MappingResult;
 import com.sg.domaininterface.port.out.EInvoiceMappingPort;
+import com.sg.domaininterface.port.out.InvoiceEnrichmentPort;
 import com.sg.domaininterface.port.out.InvoicePayableStore.PersistRequest;
 import com.sg.domaininterface.port.out.InvoicePayableStore;
 import com.sg.domaininterface.port.out.LifecycleEventPublisher.PendingLifecycleEvent;
@@ -33,11 +34,13 @@ import java.util.UUID;
  * The registration use case: turn an inbound e-invoice into a persisted payable, or into a
  * recorded reason why not.
  *
- * <p>Five collaborators, every one of them a port, none of them Spring-aware:
+ * <p>Six collaborators, none of them Spring-aware:
  *
  * <ul>
  *   <li>{@link EInvoiceMappingPort} — reads the document. Marker, fee identity, payable, lines
  *       and embedded attachments all come back from one call, along with whatever went wrong.</li>
+ *   <li>{@link InvoiceEnrichmentPort} — fills the fields no document can carry: the euro
+ *       amount, the re-attachment date and the activation flags.</li>
  *   <li>{@link ValidationRegistry} — the rules configured for the resolved business.</li>
  *   <li>{@link InvoicePayableStore} — writes the rows.</li>
  *   <li>{@link LifecycleEventPublisher} — records the REFUSED / SUSPENDED event.</li>
@@ -66,6 +69,7 @@ public final class InvoiceRegistrationServiceImpl implements InvoiceRegistration
       System.getLogger(InvoiceRegistrationServiceImpl.class.getName());
 
   private final EInvoiceMappingPort mappingPort;
+  private final InvoiceEnrichmentPort enricher;
   private final SgDocReferentialService documentStore;
   private final ValidationRegistry rules;
   private final InvoicePayableStore store;
@@ -74,12 +78,14 @@ public final class InvoiceRegistrationServiceImpl implements InvoiceRegistration
 
   public InvoiceRegistrationServiceImpl(
       EInvoiceMappingPort mappingPort,
+      InvoiceEnrichmentPort enricher,
       SgDocReferentialService documentStore,
       ValidationRegistry rules,
       InvoicePayableStore store,
       LifecycleEventPublisher lifecyclePublisher,
       RegistrationAlertNotifier alertNotifier) {
     this.mappingPort = Objects.requireNonNull(mappingPort, "mappingPort");
+    this.enricher = Objects.requireNonNull(enricher, "enricher");
     this.documentStore = Objects.requireNonNull(documentStore, "documentStore");
     this.rules = Objects.requireNonNull(rules, "rules");
     this.store = Objects.requireNonNull(store, "store");
@@ -104,6 +110,11 @@ public final class InvoiceRegistrationServiceImpl implements InvoiceRegistration
     MappingResult mapped = runMapping(eInvoice);
     List<MappingError> errors = new ArrayList<>(mapped.errors());
     Attachments attachments = chooseAttachments(uploadedAttachments, mapped);
+
+    // Before the rules, so a rule that reads an enriched field sees the enriched value. The
+    // settlement check is the one that does today; putting this after would have it decide on a
+    // model that was still half-filled.
+    errors.addAll(runEnrichment(mapped));
 
     runRules(new ValidationContext(
             mapped.marker().business(), mapped.marker(), eInvoice,
@@ -141,6 +152,23 @@ public final class InvoiceRegistrationServiceImpl implements InvoiceRegistration
       return new MappingResult(null, List.of(), List.of(), EInvoiceMarker.empty(), null, null,
           List.of(MappingError.of(ErrorCode.MAPPING_ERROR,
               "mapping port threw unexpectedly: " + ex.getMessage(), ex)));
+    }
+  }
+
+  /**
+   * Fill the fields the document could not supply.
+   *
+   * <p>The enricher is contracted to report rather than throw, for the same reason it exists: none
+   * of what it fills decides whether the invoice is valid. This guard is for the case where it
+   * throws anyway — losing a whole registration because a rate service misbehaved would be a much
+   * worse outcome than a row with no euro amount on it.
+   */
+  private List<MappingError> runEnrichment(MappingResult mapped) {
+    try {
+      return enricher.enrich(mapped.model());
+    } catch (RuntimeException ex) {
+      return List.of(MappingError.of(ErrorCode.ENRICHMENT_UNAVAILABLE,
+          "enrichment threw unexpectedly: " + ex.getMessage(), ex));
     }
   }
 

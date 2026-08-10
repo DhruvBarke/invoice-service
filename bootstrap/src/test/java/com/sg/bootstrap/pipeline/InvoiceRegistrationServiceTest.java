@@ -2,6 +2,7 @@ package com.sg.bootstrap.pipeline;
 
 import com.sg.bootstrap.pipeline.testsupport.Fixtures;
 import com.sg.bootstrap.pipeline.testsupport.Stubs;
+import com.sg.domain.einvoice.InvoicePayableEnricher;
 import com.sg.domain.einvoice.InvoiceRegistrationServiceImpl;
 import com.sg.domaininterface.port.in.InvoiceRegistrationService;
 import com.sg.domain.einvoice.rule.AttachmentPresentRule;
@@ -72,7 +73,8 @@ class InvoiceRegistrationServiceTest {
     Stubs.RecordingStore store = new Stubs.RecordingStore();
     InvoiceRegistrationService svc = new InvoiceRegistrationServiceImpl(
         new EInvoiceMappingAdapter(mapper, matcher, new MultipartExtractionService()),
-        new Stubs.RecordingDocumentStore(), rules, store, publisher, notifier);
+        Stubs.noEnrichment(), new Stubs.RecordingDocumentStore(), rules, store, publisher,
+        notifier);
     return new Harness(svc, store,
         publisher instanceof Stubs.RecordingPublisher rp ? rp : new Stubs.RecordingPublisher(),
         notifier instanceof Stubs.RecordingNotifier rn ? rn : new Stubs.RecordingNotifier());
@@ -579,14 +581,17 @@ class InvoiceRegistrationServiceTest {
 
       EInvoiceMappingPort port = new EInvoiceMappingAdapter(mapper, matcher, extractor);
       Stubs.RecordingDocumentStore docs = new Stubs.RecordingDocumentStore();
+      InvoicePayableEnricher enricher = Stubs.noEnrichment();
       assertThrows(NullPointerException.class, () -> new InvoiceRegistrationServiceImpl(
-          null, docs, rules, store, pub, notif));
+          null, enricher, docs, rules, store, pub, notif));
       assertThrows(NullPointerException.class, () -> new InvoiceRegistrationServiceImpl(
-          port, null, rules, store, pub, notif));
+          port, null, docs, rules, store, pub, notif));
       assertThrows(NullPointerException.class, () -> new InvoiceRegistrationServiceImpl(
-          port, docs, null, store, pub, notif));
+          port, enricher, null, rules, store, pub, notif));
       assertThrows(NullPointerException.class, () -> new InvoiceRegistrationServiceImpl(
-          port, docs, rules, null, pub, notif));
+          port, enricher, docs, null, store, pub, notif));
+      assertThrows(NullPointerException.class, () -> new InvoiceRegistrationServiceImpl(
+          port, enricher, docs, rules, null, pub, notif));
       // The adapter guards its own three collaborators, so the use case never sees a half-built
       // mapping stack.
       assertThrows(NullPointerException.class,
@@ -596,9 +601,9 @@ class InvoiceRegistrationServiceTest {
       assertThrows(NullPointerException.class,
           () -> new EInvoiceMappingAdapter(mapper, matcher, null));
       assertThrows(NullPointerException.class, () -> new InvoiceRegistrationServiceImpl(
-          port, docs, rules, store, null, notif));
+          port, enricher, docs, rules, store, null, notif));
       assertThrows(NullPointerException.class, () -> new InvoiceRegistrationServiceImpl(
-          port, docs, rules, store, pub, null));
+          port, enricher, docs, rules, store, pub, null));
     }
   }
 }

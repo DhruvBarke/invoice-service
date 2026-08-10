@@ -16,12 +16,14 @@ class ReferentialPropertiesTest {
     // route differently from /parties. Stripping once at construction beats every call site
     // remembering.
     ReferentialProperties props = new ReferentialProperties(
-        "https://ref/api/", "https://fees//", "https://docs", "https://mail");
+        "https://ref/api/", "https://fees//", "https://docs", "https://mail",
+        "https://common///");
 
     assertEquals("https://ref/api", props.partyBaseUrl());
     assertEquals("https://fees", props.feeCategoryBaseUrl());
     assertEquals("https://docs", props.sgDocBaseUrl());
     assertEquals("https://mail", props.emailBaseUrl());
+    assertEquals("https://common", props.commonBaseUrl());
   }
 
   @Test
@@ -30,7 +32,7 @@ class ReferentialPropertiesTest {
     // A stray space in a config file produces a URL that fails to parse at the first call, a
     // long way from the property that caused it.
     assertEquals("https://ref",
-        new ReferentialProperties("  https://ref  ", "https://f", "https://d", "https://mail").partyBaseUrl());
+        new ReferentialProperties("  https://ref  ", "https://f", "https://d", "https://mail", "https://common").partyBaseUrl());
   }
 
   @Test
@@ -38,19 +40,29 @@ class ReferentialPropertiesTest {
   void absentUrlsFailFast() {
     // Failing at boot is much cheaper than failing on the first invoice of the day.
     assertThrows(NullPointerException.class,
-        () -> new ReferentialProperties(null, "https://f", "https://d", "https://mail"));
+        () -> new ReferentialProperties(null, "https://f", "https://d", "https://mail", "https://common"));
     assertThrows(NullPointerException.class,
-        () -> new ReferentialProperties("https://p", null, "https://d", "https://mail"));
+        () -> new ReferentialProperties("https://p", null, "https://d", "https://mail", "https://common"));
     assertThrows(NullPointerException.class,
-        () -> new ReferentialProperties("https://p", "https://f", null, "https://mail"));
+        () -> new ReferentialProperties("https://p", "https://f", null, "https://mail", "https://common"));
     assertThrows(NullPointerException.class,
-        () -> new ReferentialProperties("https://p", "https://f", "https://d", null));
+        () -> new ReferentialProperties("https://p", "https://f", "https://d", null, "https://common"));
 
     assertThrows(IllegalArgumentException.class,
-        () -> new ReferentialProperties("", "https://f", "https://d", "https://mail"));
+        () -> new ReferentialProperties("", "https://f", "https://d", "https://mail", "https://common"));
     assertThrows(IllegalArgumentException.class,
-        () -> new ReferentialProperties("   ", "https://f", "https://d", "https://mail"));
+        () -> new ReferentialProperties("   ", "https://f", "https://d", "https://mail", "https://common"));
     assertThrows(IllegalArgumentException.class,
-        () -> new ReferentialProperties("https://p", "https://f", "https://d", "  "));
+        () -> new ReferentialProperties("https://p", "https://f", "https://d", "  ", "https://common"));
+
+    // The newest of the five, and the one most likely to be forgotten when a config file is
+    // copied between environments — the three clients behind it would each fail on a URL
+    // beginning "null".
+    assertThrows(NullPointerException.class,
+        () -> new ReferentialProperties("https://p", "https://f", "https://d", "https://mail",
+            null));
+    assertThrows(IllegalArgumentException.class,
+        () -> new ReferentialProperties("https://p", "https://f", "https://d", "https://mail",
+            " "));
   }
 }

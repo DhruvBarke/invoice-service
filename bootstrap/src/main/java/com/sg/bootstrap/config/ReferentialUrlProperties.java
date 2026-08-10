@@ -18,6 +18,16 @@ public class ReferentialUrlProperties {
     private String emailBaseUrl;
 
     /**
+     * Serves FX rates, the business calendar and settlement instructions.
+     *
+     * <p>One property for the three because the manual registration path reaches all of them
+     * through a single {@code referentialServiceApi}. It may hold the same value as
+     * {@code party-base-url}; that is a deployment question, and defaulting it to one would hide
+     * the day they diverge.
+     */
+    private String commonBaseUrl;
+
+    /**
      * The sender every alert is posted from.
      *
      * <p>Configuration rather than a constant: it differs per environment, and a production
@@ -46,6 +56,9 @@ public class ReferentialUrlProperties {
 
     public String getEmailBaseUrl() { return emailBaseUrl; }
     public void setEmailBaseUrl(String emailBaseUrl) { this.emailBaseUrl = emailBaseUrl; }
+
+    public String getCommonBaseUrl() { return commonBaseUrl; }
+    public void setCommonBaseUrl(String commonBaseUrl) { this.commonBaseUrl = commonBaseUrl; }
 
     public String getEmailFromAddress() { return emailFromAddress; }
     public void setEmailFromAddress(String v) { this.emailFromAddress = v; }

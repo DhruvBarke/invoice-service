@@ -49,8 +49,26 @@ public final class RegistrationProperties {
   private final Alert alert = new Alert();
   private final Map<Business, BusinessConfig> businesses = new EnumMap<>(Business.class);
 
+  /**
+   * SG entities whose invoices are paid and booked without consulting the provider-setup table.
+   *
+   * <p>Joint ventures, where the arrangement is agreed at the entity. Configuration rather than a
+   * constant because the list changes when a venture is formed or wound up, and neither event
+   * should need a release. Empty by default: an entity wrongly on this list is paid without a
+   * setup row ever being checked, so the safe default is to check.
+   */
+  private Set<String> jointVentureEntities = Set.of();
+
   public Alert getAlert() {
     return alert;
+  }
+
+  public Set<String> getJointVentureEntities() {
+    return jointVentureEntities;
+  }
+
+  public void setJointVentureEntities(Set<String> v) {
+    this.jointVentureEntities = v == null ? Set.of() : Set.copyOf(v);
   }
 
   public Map<Business, BusinessConfig> getBusinesses() {

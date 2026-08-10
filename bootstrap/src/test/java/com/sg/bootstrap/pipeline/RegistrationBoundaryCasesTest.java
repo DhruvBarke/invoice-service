@@ -52,7 +52,7 @@ class RegistrationBoundaryCasesTest {
     return new InvoiceRegistrationServiceImpl(
         new EInvoiceMappingAdapter(
             new EInvoiceFacadeMapper(Stubs.lookup()), Stubs.matcher(), extractor),
-        new Stubs.RecordingDocumentStore(), noRules(), store,
+        Stubs.noEnrichment(), new Stubs.RecordingDocumentStore(), noRules(), store,
         new Stubs.RecordingPublisher(), new Stubs.RecordingNotifier());
   }
 
@@ -319,7 +319,7 @@ class RegistrationBoundaryCasesTest {
     RegistrationOutcome outcome = new InvoiceRegistrationServiceImpl(
         new EInvoiceMappingAdapter(
             new EInvoiceFacadeMapper(Stubs.lookup()), racy, new MultipartExtractionService()),
-        new Stubs.RecordingDocumentStore(), noRules(), store,
+        Stubs.noEnrichment(), new Stubs.RecordingDocumentStore(), noRules(), store,
         new Stubs.RecordingPublisher(), new Stubs.RecordingNotifier())
         .register(Fixtures.loadInvoice("custody-with-lines.json"), List.of());
 

@@ -139,14 +139,113 @@ class InvoiceRegistrationServiceTest {
     };
   }
 
+  /**
+   * An enricher whose referentials all answer "nothing".
+   *
+   * <p>These tests are about orchestration, not about what enrichment fills in. Inert
+   * collaborators keep the euro amount, the calendar and the setup flags out of the assertions
+   * here; {@code InvoicePayableEnricherTest} is where those are pinned down.
+   */
+  private static InvoicePayableEnricher noEnrichment() {
+    return new InvoicePayableEnricher(
+        (date, currency) -> java.util.Optional.empty(),
+        (year, country) -> List.of(),
+        (mnemo, fee, entity) -> java.util.Optional.empty(),
+        java.util.Set.of());
+  }
+
   private static Harness harness(MappingResult result, ValidationRegistry rules) {
     RecordingStore store = new RecordingStore();
     RecordingPublisher publisher = new RecordingPublisher();
     RecordingNotifier notifier = new RecordingNotifier();
     return new Harness(
         new InvoiceRegistrationServiceImpl(
-            port(result), new RecordingDocumentStore(), rules, store, publisher, notifier),
+            port(result), noEnrichment(), new RecordingDocumentStore(), rules, store,
+            publisher, notifier),
         store, publisher, notifier);
+  }
+
+  // ── Enrichment ────────────────────────────────────────────────────────────
+
+  @Nested
+  @DisplayName("enrichment")
+  class Enrichment {
+
+    @Test
+    @DisplayName("what the enricher reports lands on the outcome and on the row")
+    void enrichmentErrorsAreCollected() {
+      RecordingStore store = new RecordingStore();
+      MappingError unavailable = MappingError.of(
+          ErrorCode.ENRICHMENT_UNAVAILABLE, "no USD rate for 2026-02-28");
+
+      RegistrationOutcome outcome = new InvoiceRegistrationServiceImpl(
+          port(clean(List.of())), model -> List.of(unavailable),
+          new RecordingDocumentStore(), noRules(), store,
+          new RecordingPublisher(), new RecordingNotifier())
+          .register(invoice("INV-1"), List.of());
+
+      assertTrue(outcome.errors().contains(unavailable));
+      assertTrue(store.last.get().outcome().errors().contains(unavailable),
+          "the row records what could not be worked out, not just the alert");
+    }
+
+    @Test
+    @DisplayName("an enrichment failure does not refuse the invoice")
+    void enrichmentDoesNotRefuse() {
+      // The property that makes running this before the rules safe: an outage in the rate
+      // service cannot turn into a batch of refusals the senders are asked to act on.
+      RegistrationOutcome outcome = new InvoiceRegistrationServiceImpl(
+          port(clean(List.of())),
+          model -> List.of(MappingError.of(ErrorCode.ENRICHMENT_UNAVAILABLE, "down")),
+          new RecordingDocumentStore(), noRules(), new RecordingStore(),
+          new RecordingPublisher(), new RecordingNotifier())
+          .register(invoice("INV-1"), List.of());
+
+      assertNull(outcome.lifecycleEvent());
+    }
+
+    @Test
+    @DisplayName("enrichment runs before the rules, so a rule sees the enriched model")
+    void enrichmentRunsBeforeTheRules() {
+      // The settlement rule reads fields enrichment fills. Running it after would have every
+      // such rule decide on a model that was still half-filled.
+      List<String> order = new java.util.ArrayList<>();
+      ValidationRule recording = ctx -> {
+        order.add("rule");
+        return List.of();
+      };
+
+      new InvoiceRegistrationServiceImpl(
+          port(clean(List.of())),
+          model -> { order.add("enrich"); return List.of(); },
+          new RecordingDocumentStore(),
+          ValidationRegistry.builder().add(Business.MARK, recording).build(),
+          new RecordingStore(), new RecordingPublisher(), new RecordingNotifier())
+          .register(invoice("INV-1"), List.of());
+
+      assertEquals(List.of("enrich", "rule"), order);
+    }
+
+    @Test
+    @DisplayName("an enricher that throws is recorded, not propagated")
+    void throwingEnricherIsCaptured() {
+      // The port is contracted to report rather than throw, but losing a whole registration
+      // because a rate service misbehaved would be a much worse outcome than a row with no euro
+      // amount on it.
+      RecordingStore store = new RecordingStore();
+
+      RegistrationOutcome outcome = new InvoiceRegistrationServiceImpl(
+          port(clean(List.of())),
+          model -> { throw new IllegalStateException("enricher blew up"); },
+          new RecordingDocumentStore(), noRules(), store,
+          new RecordingPublisher(), new RecordingNotifier())
+          .register(invoice("INV-1"), List.of());
+
+      assertTrue(outcome.errors().stream().anyMatch(
+          e -> e.code() == ErrorCode.ENRICHMENT_UNAVAILABLE
+              && e.detail().contains("threw unexpectedly")));
+      assertEquals(1, store.calls, "the registration is still recorded");
+    }
   }
 
   // ── Happy path ────────────────────────────────────────────────────────────
@@ -307,7 +406,8 @@ class InvoiceRegistrationServiceTest {
       };
       RecordingStore store = new RecordingStore();
       RegistrationOutcome outcome = new InvoiceRegistrationServiceImpl(
-          exploding, new RecordingDocumentStore(), noRules(), store, new RecordingPublisher(), new RecordingNotifier())
+          exploding, noEnrichment(), new RecordingDocumentStore(), noRules(), store,
+          new RecordingPublisher(), new RecordingNotifier())
           .register(invoice("INV-1"), List.of());
 
       assertTrue(outcome.errors().stream().anyMatch(
@@ -383,7 +483,7 @@ class InvoiceRegistrationServiceTest {
       RecordingStore store = new RecordingStore();
       RecordingNotifier notifier = new RecordingNotifier();
       RegistrationOutcome outcome = new InvoiceRegistrationServiceImpl(
-          port(refusing()), new RecordingDocumentStore(), noRules(), store,
+          port(refusing()), noEnrichment(), new RecordingDocumentStore(), noRules(), store,
           e -> { throw new IllegalStateException("lifecycle store is down"); },
           notifier).register(invoice("INV-1"), List.of());
 
@@ -397,7 +497,7 @@ class InvoiceRegistrationServiceTest {
     void notifierFailureIsSwallowed() {
       RecordingStore store = new RecordingStore();
       RegistrationOutcome outcome = new InvoiceRegistrationServiceImpl(
-          port(refusing()), new RecordingDocumentStore(), noRules(), store,
+          port(refusing()), noEnrichment(), new RecordingDocumentStore(), noRules(), store,
           new RecordingPublisher(),
           a -> { throw new IllegalStateException("SMTP is down"); })
           .register(invoice("INV-1"), List.of());
@@ -424,18 +524,22 @@ class InvoiceRegistrationServiceTest {
 
       SgDocReferentialService d = new RecordingDocumentStore();
 
+      InvoicePayableEnricher enricher = noEnrichment();
+
       assertThrows(NullPointerException.class,
-          () -> new InvoiceRegistrationServiceImpl(null, d, r, s, pub, n));
+          () -> new InvoiceRegistrationServiceImpl(null, enricher, d, r, s, pub, n));
       assertThrows(NullPointerException.class,
-          () -> new InvoiceRegistrationServiceImpl(p, null, r, s, pub, n));
+          () -> new InvoiceRegistrationServiceImpl(p, null, d, r, s, pub, n));
       assertThrows(NullPointerException.class,
-          () -> new InvoiceRegistrationServiceImpl(p, d, null, s, pub, n));
+          () -> new InvoiceRegistrationServiceImpl(p, enricher, null, r, s, pub, n));
       assertThrows(NullPointerException.class,
-          () -> new InvoiceRegistrationServiceImpl(p, d, r, null, pub, n));
+          () -> new InvoiceRegistrationServiceImpl(p, enricher, d, null, s, pub, n));
       assertThrows(NullPointerException.class,
-          () -> new InvoiceRegistrationServiceImpl(p, d, r, s, null, n));
+          () -> new InvoiceRegistrationServiceImpl(p, enricher, d, r, null, pub, n));
       assertThrows(NullPointerException.class,
-          () -> new InvoiceRegistrationServiceImpl(p, d, r, s, pub, null));
+          () -> new InvoiceRegistrationServiceImpl(p, enricher, d, r, s, null, n));
+      assertThrows(NullPointerException.class,
+          () -> new InvoiceRegistrationServiceImpl(p, enricher, d, r, s, pub, null));
     }
 
     @Test
