@@ -58,6 +58,12 @@ invoice:
       fee-category-base-url: https://referential.example.internal/fee-category/v1
       sg-doc-base-url: https://referential.example.internal/sgdoc/v2
 
+      # Every alert this service raises is POSTed to {email-base-url}/email-service/send-mail.
+      # The from-address is configuration because it differs per environment: a production alert
+      # arriving from a test mailbox is one people learn to ignore.
+      email-base-url: https://referential.example.internal
+      email-from-address: invoice-service@example.internal
+
       # The defaults are NOT unlimited, which is what a bare RestTemplate gives you. A
       # referential that accepts a connection and then stops responding would otherwise hold the
       # calling thread until the socket gave up; under load that exhausts the request pool and

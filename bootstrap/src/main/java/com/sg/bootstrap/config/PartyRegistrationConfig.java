@@ -6,6 +6,7 @@ import com.sg.domaininterface.port.out.AlertEmailPort;
 import com.sg.domaininterface.model.alerting.EmailAlertConfig;
 import com.sg.alert.EmailAlertPublisher;
 import com.sg.alert.SwitchGatedNotifier;
+import com.sg.jpa.adapter.JacksonRecordCodec;
 import com.sg.jpa.adapter.JdbcQuarantineStore;
 import com.sg.alert.QuarantinePoller;
 import com.sg.domain.quarantine.QuarantineService;
@@ -91,6 +92,18 @@ public class PartyRegistrationConfig {
     }
 
     // ------------------------------------------------------------------ quarantine
+
+    /**
+     * How the quarantine row's two payload snapshots are stored.
+     *
+     * <p>Also previously absent — the port existed and the store required it, so the context
+     * could not start. The format belongs to the row rather than to the domain, which is why
+     * the implementation lives in jpa-adapter.
+     */
+    @Bean
+    public RecordCodec recordCodec() {
+        return new JacksonRecordCodec();
+    }
 
     @Bean
     public QuarantineStore quarantineStore(DataSource dataSource, RecordCodec codec) {

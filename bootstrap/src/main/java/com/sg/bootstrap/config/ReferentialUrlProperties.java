@@ -15,6 +15,15 @@ public class ReferentialUrlProperties {
     private String partyBaseUrl;
     private String feeCategoryBaseUrl;
     private String sgDocBaseUrl;
+    private String emailBaseUrl;
+
+    /**
+     * The sender every alert is posted from.
+     *
+     * <p>Configuration rather than a constant: it differs per environment, and a production
+     * alert arriving from a test mailbox is one people learn to ignore.
+     */
+    private String emailFromAddress;
 
     /** Long enough for a TLS handshake on a cold connection, short enough to fail a dead host. */
     private int connectTimeoutMillis = 3_000;
@@ -34,6 +43,12 @@ public class ReferentialUrlProperties {
 
     public String getSgDocBaseUrl() { return sgDocBaseUrl; }
     public void setSgDocBaseUrl(String sgDocBaseUrl) { this.sgDocBaseUrl = sgDocBaseUrl; }
+
+    public String getEmailBaseUrl() { return emailBaseUrl; }
+    public void setEmailBaseUrl(String emailBaseUrl) { this.emailBaseUrl = emailBaseUrl; }
+
+    public String getEmailFromAddress() { return emailFromAddress; }
+    public void setEmailFromAddress(String v) { this.emailFromAddress = v; }
 
     public int getConnectTimeoutMillis() { return connectTimeoutMillis; }
     public void setConnectTimeoutMillis(int v) { this.connectTimeoutMillis = v; }

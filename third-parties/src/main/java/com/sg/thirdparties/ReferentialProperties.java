@@ -13,16 +13,19 @@ import java.util.Objects;
  * @param partyBaseUrl       base URL of the party-registration referential, no trailing slash
  * @param feeCategoryBaseUrl base URL of the fee-category referential
  * @param sgDocBaseUrl       base URL of the document store
+ * @param emailBaseUrl       base URL of the mail service
  */
 public record ReferentialProperties(
     String partyBaseUrl,
     String feeCategoryBaseUrl,
-    String sgDocBaseUrl) {
+    String sgDocBaseUrl,
+    String emailBaseUrl) {
 
   public ReferentialProperties {
     partyBaseUrl = normalise(partyBaseUrl, "partyBaseUrl");
     feeCategoryBaseUrl = normalise(feeCategoryBaseUrl, "feeCategoryBaseUrl");
     sgDocBaseUrl = normalise(sgDocBaseUrl, "sgDocBaseUrl");
+    emailBaseUrl = normalise(emailBaseUrl, "emailBaseUrl");
   }
 
   /**

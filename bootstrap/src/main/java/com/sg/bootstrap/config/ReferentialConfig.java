@@ -2,10 +2,12 @@ package com.sg.bootstrap.config;
 
 import com.sg.domaininterface.port.thirdparty.FeeCategoryReferentialService;
 import com.sg.domaininterface.port.thirdparty.PartyReferentialService;
+import com.sg.domaininterface.port.out.AlertEmailPort;
 import com.sg.domaininterface.port.thirdparty.SgDocReferentialService;
 import com.sg.thirdparties.ReferentialProperties;
 import com.sg.thirdparties.RestFeeCategoryReferentialClient;
 import com.sg.thirdparties.RestPartyReferentialClient;
+import com.sg.thirdparties.RestEmailReferentialClient;
 import com.sg.thirdparties.RestSgDocReferentialClient;
 import java.time.Duration;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
@@ -43,7 +45,8 @@ public class ReferentialConfig {
     @Bean
     public ReferentialProperties referentialProperties(ReferentialUrlProperties props) {
         return new ReferentialProperties(
-                props.getPartyBaseUrl(), props.getFeeCategoryBaseUrl(), props.getSgDocBaseUrl());
+                props.getPartyBaseUrl(), props.getFeeCategoryBaseUrl(), props.getSgDocBaseUrl(),
+                props.getEmailBaseUrl());
     }
 
     @Bean
@@ -62,5 +65,20 @@ public class ReferentialConfig {
     public SgDocReferentialService sgDocReferentialService(RestTemplate referentialRestTemplate,
                                                            ReferentialProperties properties) {
         return new RestSgDocReferentialClient(referentialRestTemplate, properties);
+    }
+
+    /**
+     * The mail transport the alerting stack sends through.
+     *
+     * <p>Previously absent. {@code AlertEmailPort} was declared, {@code EmailAlertPublisher}
+     * was written and tested against it, and no bean ever answered it — so the context could
+     * not start. Every alert this service raises passes through here.
+     */
+    @Bean
+    public AlertEmailPort alertEmailPort(RestTemplate referentialRestTemplate,
+                                         ReferentialProperties properties,
+                                         ReferentialUrlProperties urls) {
+        return new RestEmailReferentialClient(
+                referentialRestTemplate, properties, urls.getEmailFromAddress());
     }
 }

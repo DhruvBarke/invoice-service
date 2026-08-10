@@ -52,7 +52,7 @@ class RestSgDocReferentialClientTest {
   void setUp() {
     restTemplate = mock(RestTemplate.class);
     client = new RestSgDocReferentialClient(restTemplate,
-        new ReferentialProperties("https://parties", "https://fees", "https://referential/docs"));
+        new ReferentialProperties("https://parties", "https://fees", "https://referential/docs", "https://mail"));
   }
 
   private static ExtractedAttachment pdf() {
@@ -287,7 +287,7 @@ class RestSgDocReferentialClientTest {
   @Test
   @DisplayName("collaborators are mandatory")
   void mandatoryCollaborators() {
-    ReferentialProperties props = new ReferentialProperties("https://a", "https://b", "https://c");
+    ReferentialProperties props = new ReferentialProperties("https://a", "https://b", "https://c", "https://mail");
     assertThrows(NullPointerException.class, () -> new RestSgDocReferentialClient(null, props));
     assertThrows(NullPointerException.class,
         () -> new RestSgDocReferentialClient(restTemplate, null));

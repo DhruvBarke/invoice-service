@@ -47,7 +47,7 @@ class RestPartyReferentialClientTest {
   void setUp() {
     restTemplate = mock(RestTemplate.class);
     client = new RestPartyReferentialClient(restTemplate,
-        new ReferentialProperties("https://referential/api", "https://fees", "https://docs"));
+        new ReferentialProperties("https://referential/api", "https://fees", "https://docs", "https://mail"));
   }
 
   private void answerWith(List<PartyRegistrationDetails> body) {
@@ -131,7 +131,7 @@ class RestPartyReferentialClientTest {
         any(ParameterizedTypeReference.class))).thenReturn(ResponseEntity.ok(List.of()));
 
     new RestPartyReferentialClient(template,
-        new ReferentialProperties("https://referential/api/", "https://f", "https://d"))
+        new ReferentialProperties("https://referential/api/", "https://f", "https://d", "https://mail"))
         .search(PartySearchRequest.bySiren("123456789"));
 
     ArgumentCaptor<URI> uri = ArgumentCaptor.forClass(URI.class);
@@ -246,7 +246,7 @@ class RestPartyReferentialClientTest {
   @DisplayName("collaborators and the request are mandatory")
   void mandatoryArguments() {
     ReferentialProperties props =
-        new ReferentialProperties("https://a", "https://b", "https://c");
+        new ReferentialProperties("https://a", "https://b", "https://c", "https://mail");
     assertThrows(NullPointerException.class, () -> new RestPartyReferentialClient(null, props));
     assertThrows(NullPointerException.class,
         () -> new RestPartyReferentialClient(restTemplate, null));

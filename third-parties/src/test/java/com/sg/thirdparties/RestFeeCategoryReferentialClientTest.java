@@ -46,7 +46,7 @@ class RestFeeCategoryReferentialClientTest {
   void setUp() {
     restTemplate = mock(RestTemplate.class);
     client = new RestFeeCategoryReferentialClient(restTemplate,
-        new ReferentialProperties("https://parties", "https://referential/fees", "https://docs"));
+        new ReferentialProperties("https://parties", "https://referential/fees", "https://docs", "https://mail"));
   }
 
   private void answerWith(List<FeeCategoryResponse> body) {
@@ -138,7 +138,7 @@ class RestFeeCategoryReferentialClientTest {
         .thenThrow(HttpClientErrorException.create(HttpStatus.FORBIDDEN, "no",
             HttpHeaders.EMPTY, new byte[0], null));
     RestFeeCategoryReferentialClient forbidden = new RestFeeCategoryReferentialClient(refusing,
-        new ReferentialProperties("https://a", "https://b", "https://c"));
+        new ReferentialProperties("https://a", "https://b", "https://c", "https://mail"));
 
     // A 403 will be a 403 next time too. Retrying it adds load to something already telling us
     // the problem is on this side of the call.
@@ -162,7 +162,7 @@ class RestFeeCategoryReferentialClientTest {
   @Test
   @DisplayName("collaborators are mandatory")
   void mandatoryCollaborators() {
-    ReferentialProperties props = new ReferentialProperties("https://a", "https://b", "https://c");
+    ReferentialProperties props = new ReferentialProperties("https://a", "https://b", "https://c", "https://mail");
     assertThrows(NullPointerException.class,
         () -> new RestFeeCategoryReferentialClient(null, props));
     assertThrows(NullPointerException.class,
