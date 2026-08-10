@@ -81,15 +81,25 @@ public class RegistrationConfig {
     return new EInvoiceFacadeMapper(lookup);
   }
 
+  /**
+   * One bean, both ports.
+   *
+   * <p>Declared as the concrete type on purpose: {@link JdbcInvoicePayableStore} implements
+   * {@link InvoicePayableStore} and {@link LifecycleEventPublisher}, and returning the class
+   * rather than an interface is what lets Spring satisfy both from this single definition.
+   *
+   * <p>There used to be a second {@code @Bean} handing the very same instance back typed as
+   * {@code LifecycleEventPublisher}. It looked harmless — one object, two names — but by-type
+   * injection counts definitions, not identities: two candidates matched, Spring refused to
+   * choose, and the context failed to start.
+   *
+   * <p>The two ports share an instance because they write the same row. Publishing a lifecycle
+   * event updates the columns this store just inserted, so splitting them would put two
+   * components on one table with no reason to agree about it.
+   */
   @Bean
   public JdbcInvoicePayableStore invoicePayableStore(DataSource dataSource) {
     return new JdbcInvoicePayableStore(dataSource);
-  }
-
-  /** Same instance is the {@link InvoicePayableStore} and the {@link LifecycleEventPublisher}. */
-  @Bean
-  public LifecycleEventPublisher lifecycleEventPublisher(JdbcInvoicePayableStore store) {
-    return store;
   }
 
   @Bean

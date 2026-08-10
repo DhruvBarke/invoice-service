@@ -26,6 +26,7 @@ import javax.sql.DataSource;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.context.annotation.Primary;
 
 /** See the package documentation for the rationale behind explicit wiring. */
 @Configuration(proxyBeanMethods = false)
@@ -71,7 +72,20 @@ public class PartyRegistrationConfig {
                 Duration.ofSeconds(2), Duration.ofSeconds(10)));
     }
 
+    /**
+     * The notifier everything else should be given.
+     *
+     * <p>{@code @Primary} because two beans are {@link AlertNotifier}s and, unlike a redundant
+     * pair, both are wanted: the publisher below does the sending, and this one wraps it with the
+     * configured switches. Without the marker Spring cannot choose and the context will not
+     * start; worse, resolving it by name instead would hand a caller the UNGATED publisher, and
+     * every switch in {@code invoice.service.alerting} would be quietly bypassed.
+     *
+     * <p>The publisher still needs a definition of its own — it is injected here by concrete
+     * type, and its {@code destroyMethod} is what flushes the pending digest on shutdown.
+     */
     @Bean
+    @Primary
     public AlertNotifier alertNotifier(AlertingSwitches switches, EmailAlertPublisher email) {
         return new SwitchGatedNotifier(switches, email);
     }
